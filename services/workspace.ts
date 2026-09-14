@@ -1,0 +1,75 @@
+import 'server-only';
+import { desc, eq } from 'drizzle-orm';
+import { getDb } from '../db/client';
+import * as s from '../db/schema';
+import { requireUser } from './authentication';
+export async function getWorkspace() {
+  await requireUser();
+  const db = await getDb();
+  const [
+    posts,
+    variants,
+    calendar,
+    ideas,
+    media,
+    intelligence,
+    trends,
+    metrics,
+    published,
+    recommendations,
+    reviews,
+    postReviews,
+    decisions,
+    profiles,
+    messages,
+  ] = await Promise.all([
+    db.select().from(s.contentPosts).orderBy(desc(s.contentPosts.createdAt)),
+    db.select().from(s.contentPostVariants),
+    db.select().from(s.contentCalendarEntries),
+    db.select().from(s.contentIdeas).orderBy(desc(s.contentIdeas.createdAt)),
+    db.select().from(s.mediaAssets).orderBy(desc(s.mediaAssets.createdAt)),
+    db
+      .select()
+      .from(s.intelligenceItems)
+      .orderBy(desc(s.intelligenceItems.publishedAt)),
+    db.select().from(s.trendItems).orderBy(desc(s.trendItems.score)),
+    db.select().from(s.postMetricSnapshots),
+    db.select().from(s.publishedPosts),
+    db.select().from(s.aiRecommendations),
+    db.select().from(s.dailyEditorialReviews),
+    db.select().from(s.dailyEditorialPostReviews),
+    db
+      .select()
+      .from(s.recommendationDecisions)
+      .orderBy(desc(s.recommendationDecisions.createdAt)),
+    db.select().from(s.writingProfiles),
+    db.select().from(s.aiMessages).orderBy(s.aiMessages.createdAt),
+  ]);
+  return {
+    posts,
+    variants,
+    calendar,
+    ideas,
+    media,
+    intelligence,
+    trends,
+    metrics,
+    published,
+    recommendations,
+    reviews,
+    postReviews,
+    decisions,
+    profile: profiles[0],
+    messages,
+  };
+}
+export type Workspace = Awaited<ReturnType<typeof getWorkspace>>;
+export async function getMedia(id: string) {
+  await requireUser();
+  const db = await getDb();
+  const [media] = await db
+    .select()
+    .from(s.mediaAssets)
+    .where(eq(s.mediaAssets.id, id));
+  return media;
+}
