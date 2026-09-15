@@ -5,6 +5,7 @@ import type {
 } from '../types/domain';
 export interface AIProvider {
   readonly name: string;
+  complete?(request: AIRequest): Promise<AIResult>;
   generate(prompt: string): Promise<{
     text: string;
     model: string;
@@ -12,6 +13,38 @@ export interface AIProvider {
     outputTokens: number;
   }>;
 }
+export type AIMessageInput = {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_call_id?: string;
+  tool_calls?: ToolCall[];
+};
+export type ToolCall = {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+};
+export type ToolDefinition = {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+};
+export type AIRequest = {
+  messages: AIMessageInput[];
+  tier?: 'primary' | 'fast';
+  tools?: ToolDefinition[];
+  json?: boolean;
+};
+export type AIResult = {
+  text: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  toolCalls?: ToolCall[];
+};
 export interface TranscriptionProvider {
   transcribe(
     data: Uint8Array,

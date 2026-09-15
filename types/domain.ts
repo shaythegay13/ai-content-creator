@@ -38,8 +38,14 @@ export type IntelligenceRecord = {
   summary: string;
   category: string;
   importance: number;
-  publishedAt: Date;
+  publishedAt: Date | null;
   sourceUrl?: string;
+  notionUrl?: string;
+  rawText?: string;
+  entities?: string[];
+  topics?: string[];
+  tags?: string[];
+  metadata?: Record<string, unknown>;
 };
 export type TrendRecord = {
   externalId: string;

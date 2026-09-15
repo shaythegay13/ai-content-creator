@@ -36,7 +36,10 @@ export async function getWorkspace() {
     db.select().from(s.postMetricSnapshots),
     db.select().from(s.publishedPosts),
     db.select().from(s.aiRecommendations),
-    db.select().from(s.dailyEditorialReviews),
+    db
+      .select()
+      .from(s.dailyEditorialReviews)
+      .orderBy(desc(s.dailyEditorialReviews.createdAt)),
     db.select().from(s.dailyEditorialPostReviews),
     db
       .select()
@@ -44,6 +47,37 @@ export async function getWorkspace() {
       .orderBy(desc(s.recommendationDecisions.createdAt)),
     db.select().from(s.writingProfiles),
     db.select().from(s.aiMessages).orderBy(s.aiMessages.createdAt),
+  ]);
+  const [
+    topics,
+    postMedia,
+    ideaMedia,
+    usage,
+    conversations,
+    toolCalls,
+    suggestions,
+    opportunities,
+    transcripts,
+    syncRuns,
+    intelligencePosts,
+  ] = await Promise.all([
+    db.select().from(s.contentTopics),
+    db.select().from(s.mediaPostRelations),
+    db.select().from(s.ideaMediaRelations),
+    db.select().from(s.aiUsage).orderBy(desc(s.aiUsage.createdAt)),
+    db
+      .select()
+      .from(s.aiConversations)
+      .orderBy(desc(s.aiConversations.createdAt)),
+    db
+      .select()
+      .from(s.assistantToolCalls)
+      .orderBy(s.assistantToolCalls.createdAt),
+    db.select().from(s.suggestions).orderBy(desc(s.suggestions.createdAt)),
+    db.select().from(s.opportunities),
+    db.select().from(s.transcripts).orderBy(desc(s.transcripts.createdAt)),
+    db.select().from(s.syncRuns).orderBy(desc(s.syncRuns.createdAt)),
+    db.select().from(s.intelligencePostRelations),
   ]);
   return {
     posts,
@@ -61,6 +95,17 @@ export async function getWorkspace() {
     decisions,
     profile: profiles[0],
     messages,
+    topics,
+    postMedia,
+    ideaMedia,
+    usage,
+    conversations,
+    toolCalls,
+    suggestions,
+    opportunities,
+    transcripts,
+    syncRuns,
+    intelligencePosts,
   };
 }
 export type Workspace = Awaited<ReturnType<typeof getWorkspace>>;

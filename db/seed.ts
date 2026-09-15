@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Database } from './client';
 import * as s from './schema';
+import { localDateTime, zonedInput } from '../lib/time';
 import {
   DEV_USER_ID,
   MockIntelligenceSourceProvider,
@@ -133,8 +134,11 @@ export async function seed(db: Database) {
         topicId: topics[i === 0 ? 3 : i === 3 ? 4 : 5].id,
       });
       if (status === 'scheduled') {
-        const scheduledAt = new Date();
-        scheduledAt.setUTCHours(14 + i * 3, 30, 0, 0);
+        const zone = process.env.APP_TIMEZONE || 'America/New_York';
+        const scheduledAt = localDateTime(
+          `${zonedInput(new Date(), zone).slice(0, 10)}T${10 + i * 3}:30`,
+          zone,
+        );
         await tx.insert(s.contentCalendarEntries).values({
           variantId: variants[i % 2].id,
           scheduledAt,

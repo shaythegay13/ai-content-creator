@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Shell } from '@/components/shell';
 import './globals.css';
+import './manage.css';
 export const metadata: Metadata = {
   title: 'Fieldnotes — Your content workspace',
   description:

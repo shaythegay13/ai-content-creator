@@ -16,6 +16,15 @@ export async function createMockReview(
 ) {
   const reviewDate = dayKey(now, timezone);
   return db.transaction(async (tx) => {
+    if (
+      (
+        await tx
+          .select()
+          .from(s.dailyEditorialReviews)
+          .where(eq(s.dailyEditorialReviews.reviewDate, reviewDate))
+      ).length
+    )
+      return;
     const [review] = await tx
       .insert(s.dailyEditorialReviews)
       .values({

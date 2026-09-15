@@ -1,0 +1,1 @@
+ALTER TABLE "intelligence_items" ALTER COLUMN "publishedAt" DROP NOT NULL;

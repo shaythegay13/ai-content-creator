@@ -175,7 +175,11 @@ function IntelligenceList({ data }: { data: Workspace }) {
             </div>
             <h3>{item.title}</h3>
             <p>{item.summary}</p>
-            <span className="source-label">Notion daily brief · Sample</span>
+            <span className="source-label">
+              {item.source === 'mock-notion'
+                ? 'Notion daily brief · Sample'
+                : item.source}
+            </span>
           </div>
         </article>
       ))}
@@ -219,6 +223,25 @@ function MediaGrid({ data, limit }: { data: Workspace; limit?: number }) {
   );
 }
 function Opportunities({ data }: { data: Workspace }) {
+  if (data.opportunities.some((o) => o.state === 'new'))
+    return (
+      <div>
+        {data.opportunities
+          .filter((o) => o.state === 'new')
+          .slice(0, 3)
+          .map((o) => (
+            <article className="opportunity" key={o.id}>
+              <div>
+                <h3>{o.title}</h3>
+                <p>{o.reason}</p>
+                <Link href="/trends" className="quiet-link">
+                  Explore opportunity →
+                </Link>
+              </div>
+            </article>
+          ))}
+      </div>
+    );
   return (
     <div>
       {data.trends.map((trend, i) => (
@@ -404,8 +427,14 @@ export function Dashboard({ data }: { data: Workspace }) {
             <div className="assistant-emblem">
               <Layers size={20} />
             </div>
-            <h3>{data.recommendations[0]?.title}</h3>
-            <p>{data.recommendations[0]?.reason}</p>
+            <h3>
+              {data.postReviews[0]?.recommendation.replaceAll('_', ' ') ||
+                data.recommendations[0]?.title}
+            </h3>
+            <p>
+              {data.postReviews[0]?.reasons.join(' ') ||
+                data.recommendations[0]?.reason}
+            </p>
             <Link href="/assistant" className="quiet-link">
               Explore with assistant <ArrowRight size={14} />
             </Link>

@@ -77,6 +77,10 @@ export const contentPosts = pgTable(
     ideaId: uuid().references(() => contentIdeas.id, { onDelete: 'set null' }),
     title: text().notNull(),
     status: postStatus().notNull().default('draft'),
+    coreIdea: text().notNull().default(''),
+    pillar: text().notNull().default(''),
+    notes: text().notNull().default(''),
+    sourceReferences: text().array().notNull().default([]),
     ...dates(),
   },
   (t) => [index('posts_status_idx').on(t.status)],
@@ -209,8 +213,17 @@ export const intelligenceItems = pgTable(
     category: text().notNull(),
     sourceUrl: text(),
     importance: integer().notNull().default(2),
-    publishedAt: timestamp({ withTimezone: true }).notNull(),
+    publishedAt: timestamp({ withTimezone: true }),
     metadata: jsonb(),
+    notionUrl: text(),
+    rawText: text(),
+    entities: text().array().notNull().default([]),
+    topics: text().array().notNull().default([]),
+    tags: text().array().notNull().default([]),
+    relevance: integer().notNull().default(0),
+    relevanceReasons: text().array().notNull().default([]),
+    dismissed: boolean().notNull().default(false),
+    processingStatus: text().notNull().default('imported'),
     ...dates(),
   },
   (t) => [
@@ -307,11 +320,14 @@ export const aiUsage = pgTable('ai_usage', {
   model: text().notNull(),
   inputTokens: integer().notNull().default(0),
   outputTokens: integer().notNull().default(0),
+  requestType: text().notNull().default('chat'),
+  estimatedCost: text(),
   ...dates(),
 });
 export const dailyEditorialReviews = pgTable('daily_editorial_reviews', {
   id: id(),
-  reviewDate: text().notNull().unique(),
+  reviewDate: text().notNull(),
+  inputHash: text().unique(),
   timezone: text().notNull(),
   status: text().notNull().default('pending'),
   mock: boolean().notNull().default(true),
@@ -369,6 +385,7 @@ export const writingProfiles = pgTable('writing_profiles', {
     .references(() => users.id, { onDelete: 'cascade' }),
   tone: text().notNull(),
   sentenceStyle: text(),
+  hookStyle: text(),
   formattingPreferences: text(),
   phrasesToAvoid: text().array().default([]),
   preferredPhrases: text().array().default([]),
@@ -381,5 +398,72 @@ export const writingProfiles = pgTable('writing_profiles', {
 export const appSettings = pgTable('app_settings', {
   key: text().primaryKey(),
   value: jsonb().notNull(),
+  ...dates(),
+});
+export const suggestions = pgTable('suggestions', {
+  id: id(),
+  variantId: uuid()
+    .notNull()
+    .references(() => contentPostVariants.id, { onDelete: 'cascade' }),
+  original: text().notNull(),
+  suggested: text().notNull(),
+  action: text().notNull(),
+  state: text().notNull().default('pending'),
+  evidence: jsonb(),
+  ...dates(),
+});
+export const opportunities = pgTable('opportunities', {
+  id: id(),
+  intelligenceId: uuid()
+    .notNull()
+    .unique()
+    .references(() => intelligenceItems.id, { onDelete: 'cascade' }),
+  title: text().notNull(),
+  reason: text().notNull(),
+  state: text().notNull().default('new'),
+  ...dates(),
+});
+export const intelligencePostRelations = pgTable(
+  'intelligence_post_relations',
+  {
+    intelligenceId: uuid()
+      .notNull()
+      .references(() => intelligenceItems.id, { onDelete: 'cascade' }),
+    postId: uuid()
+      .notNull()
+      .references(() => contentPosts.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.intelligenceId, t.postId] })],
+);
+export const transcripts = pgTable('transcripts', {
+  id: id(),
+  mediaId: uuid()
+    .notNull()
+    .references(() => mediaAssets.id, { onDelete: 'cascade' }),
+  text: text().notNull(),
+  mock: boolean().notNull(),
+  ideas: jsonb()
+    .$type<{ title: string; note: string }[]>()
+    .notNull()
+    .default([]),
+  ...dates(),
+});
+export const assistantToolCalls = pgTable('assistant_tool_calls', {
+  id: id(),
+  conversationId: uuid()
+    .notNull()
+    .references(() => aiConversations.id, { onDelete: 'cascade' }),
+  name: text().notNull(),
+  arguments: jsonb().$type<Record<string, unknown>>().notNull(),
+  result: jsonb(),
+  status: text().notNull().default('pending'),
+  ...dates(),
+});
+export const syncRuns = pgTable('sync_runs', {
+  id: id(),
+  source: text().notNull(),
+  status: text().notNull(),
+  count: integer().notNull().default(0),
+  error: text(),
   ...dates(),
 });

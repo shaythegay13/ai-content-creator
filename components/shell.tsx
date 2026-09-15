@@ -73,7 +73,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="sidebar-bottom">
           <div className="local-indicator">
-            <i /> Local foundation
+            <i /> Local workspace
           </div>
           <p>
             Your ideas stay in your workspace.
@@ -139,9 +139,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <main>{children}</main>
         <footer>
           Fieldnotes <span>Private content workspace</span>
-          <span className="ml-auto">
-            Foundation · Sample intelligence & analytics
-          </span>
+          <span className="ml-auto">Stage 2 · Publishing disabled</span>
         </footer>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { mkdir } from 'node:fs/promises';
 import * as schema from './schema';
 import { isLocalMode } from '../lib/config';
 import { seed } from './seed';
+import { seedStage2 } from './seed-stage2';
 export type Database = ReturnType<typeof drizzle<typeof schema>>;
 const globalDb = globalThis as unknown as { contentDb?: Promise<Database> };
 export async function getDb(): Promise<Database> {
@@ -33,5 +34,6 @@ async function initialize(): Promise<Database> {
   const db = drizzle(new PGlite(directory), { schema });
   await migrate(db, { migrationsFolder: path.resolve('drizzle') });
   await seed(db);
+  await seedStage2(db);
   return db;
 }
