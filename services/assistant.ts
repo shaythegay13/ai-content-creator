@@ -17,6 +17,7 @@ import {
 import { generate, retrieveContext } from './ai';
 import { reviewOne } from './intelligence';
 import { dayKey } from './editorial';
+import { boundedHistory, compactData, estimateTokens } from '../lib/ai-budget';
 const str = { type: 'string' };
 const specs: Record<string, Record<string, unknown>> = {
   createIdea: { title: str, rawNote: str },
@@ -306,10 +307,12 @@ export async function assistantChat(
     .limit(20);
   const messages: AIMessageInput[] = [
     { role: 'system', content: await retrieveContext(db, prompt) },
-    ...history.reverse().map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    })),
+    ...boundedHistory(
+      history.reverse().map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+    ),
   ];
   let final = '';
   if (provider.name === 'mock') {
@@ -332,7 +335,12 @@ export async function assistantChat(
       final = `Mock assistant — no live model called.\n\nThree angles for “${prompt.slice(0, 160)}”:\n1. The founder lesson: describe the decision that changed your approach.\n2. The product question: what would make this a repeatable habit?\n3. The practical framework: compare the assumption, experiment and evidence.\n\nUse the application tool panel to save an idea, create a post or schedule a variant. Or type “Create idea: …”. Live Groq supports multi-turn natural-language tool selection.`;
     }
   } else {
-    for (let step = 0; step < 5; step++) {
+    for (let step = 0; step < 3; step++) {
+      if (estimateTokens({ messages, tools: assistantTools }) > 4800) {
+        final =
+          'The context budget for this turn is full. Recorded tool results are below; continue with a more specific request.';
+        break;
+      }
       const result = await generate(
         db,
         provider,
@@ -391,7 +399,7 @@ export async function assistantChat(
         messages.push({
           role: 'tool',
           tool_call_id: tool.id,
-          content: JSON.stringify(output),
+          content: JSON.stringify(compactData(output, 500)),
         });
       }
       final =

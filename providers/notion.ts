@@ -1,5 +1,6 @@
 import type { IntelligenceSourceProvider } from './contracts';
 import type { IntelligenceRecord } from '../types/domain';
+import { zonedInput } from '../lib/time';
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Obj) : {};
@@ -33,6 +34,87 @@ function prop(v: unknown): string {
   return '';
 }
 export type NotionMapping = Record<string, string>;
+export type ResearchBlock = {
+  id: string;
+  type: string;
+  text: string;
+  urls: string[];
+};
+const categoryFor = (text: string) =>
+  /legislation|bill\b/i.test(text)
+    ? 'legislation'
+    : /regulat|government/i.test(text)
+      ? 'regulation'
+      : /academic|paper|research/i.test(text)
+        ? 'academic_research'
+        : /prediction.market/i.test(text)
+          ? 'prediction_market_news'
+          : /sportsbook|sports.betting/i.test(text)
+            ? 'sportsbook_news'
+            : 'other';
+export function parseDailyBrief(
+  page: Obj,
+  blocks: ResearchBlock[],
+  mapping: NotionMapping = {},
+) {
+  const base = parseNotionPage(page, '', mapping);
+  const sections: {
+    id: string;
+    title: string;
+    category: string;
+    blocks: ResearchBlock[];
+  }[] = [];
+  let category = 'other';
+  let current = {
+    id: String(page.id),
+    title: `Research brief ${base.title}`,
+    category,
+    blocks: [] as ResearchBlock[],
+  };
+  for (const block of blocks) {
+    if (/^heading_[123]$/.test(block.type)) {
+      if (current.blocks.some((b) => b.text || b.urls.length))
+        sections.push(current);
+      const detected = categoryFor(block.text);
+      if (detected !== 'other' || block.type !== 'heading_3')
+        category = detected;
+      current = {
+        id: block.id,
+        title: block.text,
+        category,
+        blocks: block.urls.length ? [{ ...block, text: '' }] : [],
+      };
+    } else current.blocks.push(block);
+  }
+  if (current.blocks.some((b) => b.text || b.urls.length))
+    sections.push(current);
+  return sections.map((section) => {
+    const rawText = section.blocks
+      .map((b) => [b.text, ...b.urls].filter(Boolean).join('\n'))
+      .join('\n');
+    const urls = [...new Set(section.blocks.flatMap((b) => b.urls))];
+    return {
+      ...base,
+      externalId: `${page.id}:${section.id}`,
+      title: section.title,
+      category: section.category,
+      summary: rawText.slice(0, 1200),
+      rawText,
+      sourceUrl: urls[0],
+      publishedAt: null,
+      notionUrl: base.notionUrl
+        ? `${base.notionUrl.split('#')[0]}#${section.id.replaceAll('-', '')}`
+        : undefined,
+      metadata: {
+        ...base.metadata,
+        briefDate: base.title,
+        publicationDate: null,
+        sectionBlockId: section.id,
+        sourceUrls: urls,
+      },
+    } satisfies IntelligenceRecord;
+  });
+}
 const defaults: NotionMapping = {
   title: 'Name',
   category: 'Category',
@@ -124,6 +206,9 @@ export class NotionIntelligenceProvider implements IntelligenceSourceProvider {
       databaseId?: string;
       pageId?: string;
       mapping?: NotionMapping;
+      layout?: 'daily' | 'items';
+      briefDate?: string;
+      timezone?: string;
     },
     private request: typeof fetch = fetch,
   ) {}
@@ -183,28 +268,79 @@ export class NotionIntelligenceProvider implements IntelligenceSourceProvider {
       'Notion pagination limit reached; narrow the source. No partial sync was saved.',
     );
   }
-  private async blocks(blockId: string, depth = 0): Promise<string> {
+  private async blocks(blockId: string, depth = 0): Promise<ResearchBlock[]> {
     if (depth > 12)
       throw new Error('Notion nesting limit reached; select a narrower page.');
     const blocks = await this.list(`blocks/${blockId}/children`);
-    const lines: string[] = [];
+    const lines: ResearchBlock[] = [];
     for (const b of blocks) {
       const payload = obj(b[String(b.type)]);
-      const line = rich(payload.rich_text) || String(payload.title || '');
-      if (line) lines.push(line);
-      if (payload.url) lines.push(String(payload.url));
+      const richParts = [
+        ...arr(payload.rich_text),
+        ...arr(payload.cells).flatMap(arr),
+        ...arr(payload.caption),
+      ];
+      const line = arr(payload.cells).length
+        ? arr(payload.cells).map(rich).join(' | ')
+        : rich(payload.rich_text) ||
+          rich(payload.caption) ||
+          String(payload.title || '');
+      const urls = richParts.flatMap((v) => {
+        const r = obj(v);
+        const url = r.href || obj(obj(r.text).link).url;
+        return typeof url === 'string' && /^https?:\/\//.test(url) ? [url] : [];
+      });
+      urls.push(...(line.match(/https?:\/\/[^\s<>]+/g) || []));
+      if (typeof payload.url === 'string' && /^https?:\/\//.test(payload.url))
+        urls.push(payload.url);
+      if (line || urls.length)
+        lines.push({
+          id: String(b.id),
+          type: String(b.type),
+          text: line,
+          urls: [...new Set(urls)],
+        });
       if (b.has_children)
-        lines.push(await this.blocks(String(b.id), depth + 1));
+        lines.push(...(await this.blocks(String(b.id), depth + 1)));
     }
-    return lines.join('\n');
+    return lines;
   }
   async fetch() {
     const pages: Obj[] = [];
     if (this.config.databaseId) {
       const db = await this.call(`databases/${this.config.databaseId}`);
       for (const source of arr(db.data_sources)) {
+        let query: Obj = {};
+        if (this.config.layout === 'daily') {
+          const date =
+            this.config.briefDate ||
+            zonedInput(
+              new Date(),
+              this.config.timezone || 'America/New_York',
+            ).slice(0, 10);
+          if (
+            !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+            new Date(`${date}T12:00:00Z`).toISOString().slice(0, 10) !== date
+          )
+            throw new Error(
+              'Notion brief date must be a valid ISO date (YYYY-MM-DD).',
+            );
+          const schema = await this.call(`data_sources/${obj(source).id}`);
+          const titleProperty =
+            this.config.mapping?.title ||
+            Object.entries(obj(schema.properties)).find(
+              ([, value]) => obj(value).type === 'title',
+            )?.[0];
+          if (!titleProperty)
+            throw new Error(
+              'Could not identify the daily brief title property. Configure the title mapping.',
+            );
+          query = {
+            filter: { property: titleProperty, title: { equals: date } },
+          };
+        }
         pages.push(
-          ...(await this.list(`data_sources/${obj(source).id}/query`, {})),
+          ...(await this.list(`data_sources/${obj(source).id}/query`, query)),
         );
       }
     } else if (this.config.pageId) {
@@ -219,14 +355,30 @@ export class NotionIntelligenceProvider implements IntelligenceSourceProvider {
         'Configure NOTION_DAILY_BRIEF_DATABASE_ID or NOTION_DAILY_BRIEF_PAGE_ID.',
       );
     const items: IntelligenceRecord[] = [];
-    for (const page of pages)
-      items.push(
-        parseNotionPage(
-          page,
-          await this.blocks(String(page.id)),
-          this.config.mapping,
-        ),
+    if (this.config.layout === 'daily' && !pages.length)
+      throw new Error(
+        `No daily research brief found for ${this.config.briefDate || zonedInput(new Date(), this.config.timezone || 'America/New_York').slice(0, 10)}. Existing intelligence was kept.`,
       );
+    for (const page of pages) {
+      const blocks = await this.blocks(String(page.id));
+      if (this.config.layout === 'daily') {
+        const sections = parseDailyBrief(page, blocks, this.config.mapping);
+        if (!sections.length)
+          throw new Error(
+            'The daily brief page has no readable research blocks. Existing intelligence was kept.',
+          );
+        items.push(...sections);
+      } else
+        items.push(
+          parseNotionPage(
+            page,
+            blocks
+              .map((b) => [b.text, ...b.urls].filter(Boolean).join('\n'))
+              .join('\n'),
+            this.config.mapping,
+          ),
+        );
+    }
     return items;
   }
 }

@@ -1,5 +1,9 @@
 # Provider boundaries
 
+The configured model defaults are in `.env.example`: GPT-OSS 120B primary, GPT-OSS 20B fast and Whisper large v3 turbo speech. The Groq adapter applies separate per-model rolling reservations using the supplied 30 RPM / 1,000 RPD / 8,000 TPM / 200,000 TPD limits. Bounded output/context, sequential editorial work and validated analysis caching reduce repeat consumption. The ledger is process-local; upstream quotas and activity outside the application remain authoritative.
+
+Daily Notion mode discovers the data-source title property and filters for the requested ISO-date page before fetching its nested content. It preserves table cells and inline links, splits heading sections using stable block IDs, and distinguishes brief dates from source publication dates. The UI supports choosing a historical brief; missing days are explicit. `NOTION_LAYOUT=items` enables the previous generic row mapping. Primary references: [Notion query filtering](https://developers.notion.com/reference/filter-data-source-entries), [page content](https://developers.notion.com/guides/data-apis/working-with-page-content), [Groq limits](https://console.groq.com/docs/rate-limits), and [reasoning options](https://console.groq.com/docs/reasoning).
+
 Contracts are independent of React and vendor SDKs. `index.ts` is the server-only composition root, currently enabled only in local mode.
 
 | Capability                                                        | Selection                                                           |

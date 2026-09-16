@@ -133,7 +133,15 @@ export async function manage(
         break;
       }
       case 'sync':
-        data = await dailyWorkflow(db, providers(), timezone());
+        data = await dailyWorkflow(
+          db,
+          providers({
+            briefDate: input.briefDate
+              ? z.iso.date().parse(input.briefDate)
+              : undefined,
+          }),
+          timezone(),
+        );
         break;
       case 'review':
         data = await runEditorialReview(db, providers().ai, timezone());

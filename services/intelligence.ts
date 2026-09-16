@@ -10,6 +10,7 @@ import { dayKey } from './editorial';
 import { generate, retrieveContext } from './ai';
 import { promptModules } from '../prompts';
 import { z } from 'zod';
+import { excerpt, relevantExcerpt } from '../lib/ai-budget';
 export function scoreItem(
   item: {
     title: string;
@@ -180,9 +181,11 @@ export async function reviewOne(
   );
   const evidence = all
     .filter((i) =>
-      words.some((w) => `${i.title} ${i.summary}`.toLowerCase().includes(w)),
+      words.some((w) =>
+        `${i.title} ${i.summary} ${i.rawText}`.toLowerCase().includes(w),
+      ),
     )
-    .slice(0, 6);
+    .slice(0, 3);
   let result: z.infer<typeof reviewResult>;
   if (provider.name === 'mock') {
     const item =
@@ -208,23 +211,66 @@ export async function reviewOne(
           : `${variant.body}\n\nA point worth checking against the latest brief: ${item?.summary}`,
       evidenceIds: item ? [item.id] : [],
     };
+  } else if (!evidence.length) {
+    result = {
+      recommendation: 'KEEP',
+      reasons: [
+        'Insufficient related intelligence; preserve the original. No AI request needed.',
+      ],
+      suggestedRevision: null,
+      evidenceIds: [],
+    };
   } else {
-    const response = await generate(
-      db,
-      provider,
-      {
-        json: true,
-        messages: [
-          {
-            role: 'system',
-            content: `${await retrieveContext(db, variant.body)}\n${promptModules.editorial}`,
-          },
-          { role: 'user', content: JSON.stringify({ variant, evidence }) },
-        ],
-      },
-      'editorial',
-    );
-    result = reviewResult.parse(JSON.parse(response.text));
+    const request = {
+      json: true,
+      maxOutputTokens: 1800,
+      messages: [
+        {
+          role: 'system' as const,
+          content: `${await retrieveContext(db, variant.body, false)}\n${promptModules.editorial}`,
+        },
+        {
+          role: 'user' as const,
+          content: JSON.stringify({
+            variant: {
+              id: variant.id,
+              platform: variant.platform,
+              body: variant.body,
+            },
+            evidence: evidence.map((i) => ({
+              id: i.id,
+              title: excerpt(i.title, 160),
+              summary: excerpt(i.summary, 500),
+              rawText: relevantExcerpt(i.rawText, variant.body, 900),
+              sourceUrl: i.sourceUrl,
+              notionUrl: i.notionUrl,
+            })),
+          }),
+        },
+      ],
+    };
+    const cacheKey =
+      'editorial-cache:' +
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            request,
+            provider: provider.name,
+            model: process.env.AI_PRIMARY_MODEL,
+            effort: process.env.AI_REASONING_EFFORT,
+            evidence: evidence.map((i) => [i.id, i.rawText, i.summary]),
+          }),
+        )
+        .digest('hex');
+    const [cached] = await db
+      .select()
+      .from(s.appSettings)
+      .where(eq(s.appSettings.key, cacheKey));
+    result = cached
+      ? reviewResult.parse(cached.value)
+      : reviewResult.parse(
+          JSON.parse((await generate(db, provider, request, 'editorial')).text),
+        );
     if (result.evidenceIds.some((id) => !evidence.some((i) => i.id === id)))
       throw new Error(
         'AI cited evidence that was not provided. Review not saved.',
@@ -236,6 +282,11 @@ export async function reviewOne(
       throw new Error(
         'A revision requires supplied evidence and suggested text.',
       );
+    if (!cached)
+      await db
+        .insert(s.appSettings)
+        .values({ key: cacheKey, value: result })
+        .onConflictDoNothing();
   }
   return {
     ...result,

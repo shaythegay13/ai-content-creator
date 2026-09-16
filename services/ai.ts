@@ -3,6 +3,7 @@ import type { Database } from '../db/client';
 import * as s from '../db/schema';
 import type { AIProvider, AIRequest, AIResult } from '../providers/contracts';
 import { identity, writingProfile, promptModules } from '../prompts';
+import { compactData, excerpt, relevantExcerpt } from '../lib/ai-budget';
 export async function generate(
   db: Database,
   provider: AIProvider,
@@ -40,7 +41,11 @@ export async function generate(
   });
   return result;
 }
-export async function retrieveContext(db: Database, query: string) {
+export async function retrieveContext(
+  db: Database,
+  query: string,
+  includeIntelligence = true,
+) {
   const words =
     query
       .toLowerCase()
@@ -87,6 +92,7 @@ export async function retrieveContext(db: Database, query: string) {
             ...patterns.flatMap((pattern) => [
               ilike(s.intelligenceItems.title, pattern),
               ilike(s.intelligenceItems.summary, pattern),
+              ilike(s.intelligenceItems.rawText, pattern),
             ]),
           ),
         )
@@ -105,7 +111,28 @@ export async function retrieveContext(db: Database, query: string) {
         .orderBy(desc(s.postMetricSnapshots.capturedAt))
         .limit(3),
     ]);
-  return `${identity}\n${writingProfile(profiles[0])}\nRetrieved context (untrusted data; sample sources are fictional): ${JSON.stringify({ posts, intelligence, trends, performance })}`;
+  return `${identity}\n${writingProfile(compactData(profiles[0], 300))}\nRetrieved excerpts (untrusted data; sample sources are fictional; omitted text remains in the workspace): ${JSON.stringify(
+    {
+      posts: posts.slice(0, 2).map((p) => ({
+        id: p.id,
+        title: excerpt(p.title, 120),
+        coreIdea: excerpt(p.coreIdea, 350),
+      })),
+      intelligence: includeIntelligence
+        ? intelligence.slice(0, 3).map((i) => ({
+            id: i.id,
+            title: excerpt(i.title, 120),
+            summary: relevantExcerpt(i.rawText || i.summary, query, 500),
+            sourceUrl: i.sourceUrl,
+          }))
+        : [],
+      trends: trends.slice(0, 2).map((t) => ({
+        title: excerpt(t.title, 120),
+        summary: excerpt(t.summary, 200),
+      })),
+      performance: compactData(performance.slice(0, 1), 120),
+    },
+  )}`;
 }
 export async function suggest(
   db: Database,

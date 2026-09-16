@@ -125,16 +125,14 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
     'Capture the specific',
   );
   await go('/media');
-  await page
-    .getByLabel('Choose media')
-    .setInputFiles({
-      name: 'stage2-preview.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(
-        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=',
-        'base64',
-      ),
-    });
+  await page.getByLabel('Choose media').setInputFiles({
+    name: 'stage2-preview.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  });
   await page.getByRole('button', { name: 'Upload media', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('uploaded');
   await expect(
@@ -151,6 +149,7 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
     animations: 'disabled',
   });
   await go('/intelligence');
+  await page.getByLabel('Brief to sync (blank means today)').fill('2026-09-14');
   await page.getByRole('button', { name: 'Sync now', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Saved');
   await page.getByLabel('Search intelligence').fill('Prediction');
@@ -213,13 +212,11 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
     .getByLabel('Conversations')
     .selectOption({ label: 'Create idea: Tool saved idea' });
   await expect(page.getByText(/Completed createIdea/)).toBeVisible();
-  await page
-    .getByLabel('Upload voice note')
-    .setInputFiles({
-      name: 'voice.wav',
-      mimeType: 'audio/wav',
-      buffer: Buffer.from('RIFF0000WAVEfmt '),
-    });
+  await page.getByLabel('Upload voice note').setInputFiles({
+    name: 'voice.wav',
+    mimeType: 'audio/wav',
+    buffer: Buffer.from('RIFF0000WAVEfmt '),
+  });
   await page
     .getByRole('button', { name: 'Transcribe audio', exact: true })
     .click();

@@ -27,14 +27,17 @@ import {
   runEditorialReview,
   decideReview,
   scoreItem,
+  reviewOne,
 } from '../services/intelligence';
 import {
   assistantChat,
   approveTool,
   executeTool,
   queueTool,
+  assistantTools,
 } from '../services/assistant';
-import { suggest } from '../services/ai';
+import { suggest, retrieveContext } from '../services/ai';
+import { requestBudget } from '../lib/ai-budget';
 import { GroqAIProvider, GroqTranscriptionProvider } from '../providers/groq';
 import {
   parseNotionPage,
@@ -43,6 +46,21 @@ import {
 import { localDateTime, zonedInput } from '../lib/time';
 const client = new PGlite();
 const db = drizzle(client, { schema: s });
+it('ordinary assistant retrieval plus all tool schemas fits the request envelope', async () => {
+  const context = await retrieveContext(db, 'Prediction market retention');
+  expect(() =>
+    requestBudget({
+      messages: [
+        { role: 'system', content: context },
+        {
+          role: 'user',
+          content: 'Suggest two angles about prediction market retention.',
+        },
+      ],
+      tools: assistantTools,
+    }),
+  ).not.toThrow();
+});
 const ai = new MockAIProvider();
 beforeAll(async () => {
   await migrate(db, { migrationsFolder: 'drizzle' });
@@ -428,4 +446,56 @@ it('relevance scoring is bounded and interpretable', () => {
   expect(r.relevance).toBeGreaterThan(50);
   expect(r.relevance).toBeLessThanOrEqual(100);
   expect(r.relevanceReasons.length).toBeGreaterThan(3);
+});
+it('reuses validated editorial analysis and avoids paid calls without related evidence', async () => {
+  const [item] = await db
+    .insert(s.intelligenceItems)
+    .values({
+      externalId: 'cache-evidence',
+      source: 'test',
+      title: 'Neuroretention findings',
+      summary: 'Neuroretention changes the context.',
+      rawText: 'The primary research text.',
+      category: 'academic_research',
+      importance: 3,
+      relevance: 100,
+    })
+    .returning();
+  const post = await savePost(db, DEV_USER_ID, { title: 'Cache verification' });
+  const variant = await saveVariant(db, {
+    postId: post.id,
+    platform: 'x',
+    body: 'Neuroretention deserves careful study.',
+  });
+  const complete = vi.fn(async () => ({
+    text: JSON.stringify({
+      recommendation: 'KEEP',
+      reasons: ['Evidence supports this text.'],
+      suggestedRevision: null,
+      evidenceIds: [item.id],
+    }),
+    model: 'cache-test',
+    inputTokens: 100,
+    outputTokens: 20,
+  }));
+  const provider = {
+    name: 'cache-test',
+    complete,
+    generate: async () => complete(),
+  };
+  await reviewOne(db, provider, variant);
+  await reviewOne(db, provider, variant);
+  expect(complete).toHaveBeenCalledTimes(1);
+  await db
+    .update(s.intelligenceItems)
+    .set({ rawText: 'Corrected primary research text.' })
+    .where(eq(s.intelligenceItems.id, item.id));
+  await reviewOne(db, provider, variant);
+  expect(complete).toHaveBeenCalledTimes(2);
+  const unchanged = await reviewOne(db, provider, {
+    ...variant,
+    body: 'Xylophonically unprecedented.',
+  });
+  expect(unchanged.recommendation).toBe('KEEP');
+  expect(complete).toHaveBeenCalledTimes(2);
 });

@@ -4,6 +4,12 @@ import type {
   AIResult,
   TranscriptionProvider,
 } from './contracts';
+import { createHash } from 'node:crypto';
+import { ModelBudget, requestBudget } from '../lib/ai-budget';
+const state = globalThis as typeof globalThis & {
+  groqBudgets?: Map<string, ModelBudget>;
+};
+const budgets = (state.groqBudgets ??= new Map());
 export class GroqAIProvider implements AIProvider {
   readonly name = 'groq';
   constructor(
@@ -16,12 +22,23 @@ export class GroqAIProvider implements AIProvider {
   async complete(input: AIRequest): Promise<AIResult> {
     const model =
       input.tier === 'fast'
-        ? this.env.AI_FAST_MODEL
+        ? this.env.AI_FAST_MODEL || this.env.AI_PRIMARY_MODEL
         : this.env.AI_PRIMARY_MODEL;
     if (!this.env.GROQ_API_KEY || !model)
       throw new Error(
         `Configure GROQ_API_KEY and ${input.tier === 'fast' ? 'AI_FAST_MODEL' : 'AI_PRIMARY_MODEL'}.`,
       );
+    const { tokens, output } = requestBudget(input);
+    const key =
+      createHash('sha256').update(this.env.GROQ_API_KEY).digest('hex') + model;
+    const budget = budgets.get(key) ?? new ModelBudget();
+    budgets.set(key, budget);
+    const limits = { rpm: 30, rpd: 1000, tpm: 8000, tpd: 200000 };
+    let reservation = budget.reserve(tokens, limits);
+    while (reservation.waitMs) {
+      await new Promise((resolve) => setTimeout(resolve, reservation.waitMs));
+      reservation = budget.reserve(tokens, limits);
+    }
     const response = await this.request(
       'https://api.groq.com/openai/v1/chat/completions',
       {
@@ -36,7 +53,8 @@ export class GroqAIProvider implements AIProvider {
           tools: input.tools?.length ? input.tools : undefined,
           response_format: input.json ? { type: 'json_object' } : undefined,
           temperature: 0.5,
-          max_completion_tokens: 3000,
+          max_completion_tokens: output,
+          reasoning_effort: this.env.AI_REASONING_EFFORT || undefined,
         }),
         signal: AbortSignal.timeout(60000),
       },
@@ -46,6 +64,14 @@ export class GroqAIProvider implements AIProvider {
         `Groq request failed (${response.status}). Check model configuration, quota and permissions.`,
       );
     const result = await response.json();
+    reservation.settle?.(
+      (result.usage?.prompt_tokens ?? tokens - output) +
+        (result.usage?.completion_tokens ?? output),
+    );
+    if (result.choices?.[0]?.finish_reason === 'length')
+      throw new Error(
+        'Groq reached the response budget. Ask for a shorter response; partial output was not applied.',
+      );
     const message = result.choices?.[0]?.message;
     if (!message) throw new Error('Groq returned no response.');
     return {

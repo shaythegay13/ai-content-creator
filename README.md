@@ -55,6 +55,24 @@ Production/auth, Gemini, R2, social and Telegram environment placeholders remain
 
 ## Architecture and database
 
+### Configured models and request budgets
+
+The environment template and local settings use `openai/gpt-oss-120b` for primary work, `openai/gpt-oss-20b` for fast work, and `whisper-large-v3-turbo` for transcription. Model identifiers stay in configuration. `AI_REASONING_EFFORT=low` reduces reasoning overhead on these GPT-OSS models.
+
+Each GPT-OSS model has its own local rolling budget: 30 requests/minute, 1,000/day, 8,000 tokens/minute and 200,000/day. Calls reserve estimated input plus output before dispatch; overlapping requests share the reservation ledger and wait for minute capacity. Successful responses reconcile the reservation against actual token usage. This ledger is process-local and resets on restart; other applications using the same Groq account are outside it, so Groq remains authoritative.
+
+Requests have a 6,000 estimated-token envelope, including tools and output allowance. Input estimation uses UTF-8 bytes/3 plus overhead, not an exact model tokenizer. Fast output is capped at 600 tokens, normal output at 1,200 and editorial output at 1,800. Oversized inputs fail before a paid call instead of silently cutting the user's draft. Truncated model output is never applied. Requests may wait when the minute budget is occupied.
+
+Retrieval sends small selected fields and query-relevant excerpts, including matches deep inside research pages. Full source text stays in the database. Conversation history retains complete recent messages within a separate budget; tool-result payloads are compacted and the assistant is limited to three model rounds per turn. Editorial work runs sequentially, never in a burst of parallel calls; it skips paid calls without related evidence and caches validated per-post analysis by content, evidence, context and model. Changing one post therefore does not automatically repay for unchanged analyses. There is no provider Batch API job or whole-database prompt.
+
+### Daily Research Briefs layout
+
+`NOTION_LAYOUT=daily` is the default. The adapter retrieves the database's data-source schema, discovers its title property, and queries for an exact ISO title such as `2026-09-14`. It then reads that row's actual page blocks, including pagination, nested blocks, table cells and inline source links. Headings delimit research sections, each keyed by page ID plus heading block ID. Correcting text keeps the same ID. Dates identifying a brief are stored as `briefDate`; they are not fabricated article publication dates.
+
+Use **Intelligence → Brief to sync** to choose a historical entry. Leave it blank for today's date in `APP_TIMEZONE`, or set `NOTION_BRIEF_DATE=YYYY-MM-DD` as a local default override. A missing day produces an explicit message and keeps existing intelligence; the app does not quietly treat yesterday's research as today's. `NOTION_LAYOUT=items` retains the original one-item-per-row import for other databases. Rich-property mappings remain configurable. Sources without links or explicit metadata keep those fields unknown; their full text remains available.
+
+Live verification succeeded for both configured chat models and the September 14 daily page (13 sections). At verification time the September 15 row did not exist. Speech upload remains covered by mock and multipart contract tests; no live transcription was performed in this update.
+
 Next.js App Router, React, strict TypeScript, Tailwind, Drizzle and persistent PGlite PostgreSQL. Database/provider access stays server-side. The Neon and Auth.js foundation is retained for a later production stage.
 
 | Location                                       | Responsibility                                                                    |

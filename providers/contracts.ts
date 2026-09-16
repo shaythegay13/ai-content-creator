@@ -37,6 +37,7 @@ export type AIRequest = {
   tier?: 'primary' | 'fast';
   tools?: ToolDefinition[];
   json?: boolean;
+  maxOutputTokens?: number;
 };
 export type AIResult = {
   text: string;

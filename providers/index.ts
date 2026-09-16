@@ -13,7 +13,7 @@ import {
 import { LocalMediaStorageProvider } from './storage';
 import { GroqAIProvider, GroqTranscriptionProvider } from './groq';
 import { NotionIntelligenceProvider } from './notion';
-export function providers() {
+export function providers(options: { briefDate?: string } = {}) {
   if (!isLocalMode())
     throw new Error(
       'Production providers are not enabled in this local workspace.',
@@ -34,6 +34,10 @@ export function providers() {
           databaseId: process.env.NOTION_DAILY_BRIEF_DATABASE_ID,
           pageId: process.env.NOTION_DAILY_BRIEF_PAGE_ID,
           mapping: JSON.parse(process.env.NOTION_PROPERTY_MAPPING_JSON || '{}'),
+          layout: process.env.NOTION_LAYOUT === 'items' ? 'items' : 'daily',
+          briefDate:
+            options.briefDate || process.env.NOTION_BRIEF_DATE || undefined,
+          timezone: process.env.APP_TIMEZONE || 'America/New_York',
         })
       : new MockIntelligenceSourceProvider(),
     chat: new MockChatChannel(),

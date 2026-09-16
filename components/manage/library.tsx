@@ -441,6 +441,7 @@ function MediaCard({
   );
 }
 export function Intelligence({ data }: { data: Workspace }) {
+  const [briefDate, setBriefDate] = useState('');
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('');
   const [topic, setTopic] = useState('');
@@ -475,9 +476,18 @@ export function Intelligence({ data }: { data: Workspace }) {
         title="Intelligence"
         description="Read-only Notion briefs, with source context and transparent relevance."
       >
-        <Button disabled={busy} onClick={() => run('sync', {})}>
-          {busy ? 'Syncing and reviewing…' : 'Sync now'}
-        </Button>
+        <div className="filter-bar">
+          <Field label="Brief to sync (blank means today)">
+            <input
+              type="date"
+              value={briefDate}
+              onChange={(e) => setBriefDate(e.target.value)}
+            />
+          </Field>
+          <Button disabled={busy} onClick={() => run('sync', { briefDate })}>
+            {busy ? 'Syncing and reviewing…' : 'Sync now'}
+          </Button>
+        </div>
       </Title>
       <Notice text={notice} />
       <div className="filter-bar">
