@@ -4,6 +4,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Workspace } from '@/services/workspace';
 import { zonedInput } from '@/lib/time';
+import {
+  validatePlatform,
+  hashtagsIn,
+  withoutHashtags,
+  composePost,
+} from '@/lib/platform-validation';
 import { Button, Field, Title, Notice, useManage } from './shared';
 const actions = [
   'Generate Draft',
@@ -22,6 +28,7 @@ const actions = [
   'Rewrite Using Trend',
 ];
 export function NewContent({ date = '' }: { date?: string }) {
+  const [platforms, setPlatforms] = useState(['x', 'linkedin']);
   const { run, busy, notice } = useManage();
   const router = useRouter();
   return (
@@ -35,18 +42,13 @@ export function NewContent({ date = '' }: { date?: string }) {
         onSubmit={async (e) => {
           e.preventDefault();
           const f = new FormData(e.currentTarget);
-          const r = await run('savePost', {
+          const r = await run('createContent', {
             title: f.get('title'),
             coreIdea: f.get('body'),
+            platforms,
           });
           if (r.ok) {
             const post = r.data as { id: string };
-            for (const platform of ['x', 'linkedin'])
-              await run('saveVariant', {
-                postId: post.id,
-                platform,
-                body: String(f.get('body')),
-              });
             router.push(`/posts/${post.id}${date ? `?date=${date}` : ''}`);
           }
         }}
@@ -57,7 +59,16 @@ export function NewContent({ date = '' }: { date?: string }) {
         <Field label="Core idea">
           <textarea name="body" rows={6} required />
         </Field>
-        <Button disabled={busy}>Create draft with X + LinkedIn variants</Button>
+        <PlatformTargets value={platforms} onChange={setPlatforms} />
+        <Button disabled={busy || !platforms.length}>
+          Create draft with X + LinkedIn variants
+        </Button>
+        {busy && (
+          <p role="status">
+            Creating post and generating selected platform drafts. This may wait
+            for your AI rate limit.
+          </p>
+        )}
         <Notice text={notice} />
       </form>
     </>
@@ -208,6 +219,12 @@ export function Editor({
               />
             ))}
           <div className="panel button-row">
+            <Button
+              disabled={busy}
+              onClick={() => run('regenerateAll', { id })}
+            >
+              Regenerate all (proposals)
+            </Button>
             {['x', 'linkedin']
               .filter(
                 (p) =>
@@ -220,10 +237,9 @@ export function Editor({
                   key={platform}
                   disabled={busy}
                   onClick={() =>
-                    run('saveVariant', {
+                    run('generateVariant', {
                       postId: id,
                       platform,
-                      body: post.coreIdea,
                     })
                   }
                 >
@@ -299,10 +315,12 @@ function VariantEditor({
 }) {
   const { run, busy, notice } = useManage();
   const [body, setBody] = useState(v.body);
+  const [tagText, setTagText] = useState(hashtagsIn(v.body).join(', '));
   const [savedBody, setSavedBody] = useState(v.body);
   if (savedBody !== v.body) {
     setSavedBody(v.body);
     setBody(v.body);
+    setTagText(hashtagsIn(v.body).join(', '));
   }
   const [action, setAction] = useState(actions[0]);
   const [extra, setExtra] = useState('');
@@ -310,6 +328,7 @@ function VariantEditor({
   const pending = data.suggestions.filter(
     (s) => s.variantId === v.id && s.state === 'pending',
   );
+  const validation = validatePlatform(v.platform, body);
   return (
     <section className="panel form-stack">
       <div className="flex justify-between">
@@ -320,34 +339,71 @@ function VariantEditor({
         <textarea
           rows={v.platform === 'x' ? 5 : 10}
           value={body}
-          onChange={(e) => setBody(e.target.value)}
+          onChange={(e) => {
+            setBody(e.target.value);
+            setTagText(hashtagsIn(e.target.value).join(', '));
+          }}
         />
       </Field>
-      <p
-        className={
-          v.platform === 'x' && body.length > 280
-            ? 'warning-text'
-            : 'muted text-xs'
+      <Field label={`${v.platform} hashtags`}>
+        <input
+          value={tagText}
+          onChange={(e) => {
+            setTagText(e.target.value);
+            setBody(
+              composePost(
+                withoutHashtags(body),
+                e.target.value
+                  .split(/[\s,]+/)
+                  .map((t) => t.replace(/^#/, ''))
+                  .filter(Boolean),
+              ),
+            );
+          }}
+        />
+      </Field>
+      <p className={validation.valid ? 'muted' : 'warning-text'}>
+        <strong>
+          {validation.count} / {validation.limit}
+        </strong>
+        {!validation.valid &&
+          ' — Invalid: shorten before saving, approving or scheduling.'}
+      </p>
+      <p role={v.generationStatus === 'failed' ? 'alert' : undefined}>
+        Initial generation:{' '}
+        {v.generationStatus === 'succeeded' ? 'Complete' : v.generationStatus}
+        {v.generationError ? ` — ${v.generationError}` : ''}
+      </p>
+      <Button
+        variant="outline"
+        disabled={busy}
+        onClick={() =>
+          run('generateVariant', {
+            postId: v.postId,
+            platform: v.platform,
+            regenerate: !!v.body.trim(),
+          })
         }
       >
-        {body.length} characters
-        {v.platform === 'x' && body.length > 280
-          ? ' · Above the standard 280-character limit; shorten or check your account capabilities.'
-          : ''}
-        {v.platform === 'linkedin' && body.length > 3000
-          ? ' · Above the usual 3,000-character limit.'
-          : ''}
-      </p>
+        {busy
+          ? 'Generating…'
+          : v.generationStatus === 'failed'
+            ? 'Retry ' + v.platform + ' generation'
+            : v.body.trim()
+              ? 'Regenerate ' + v.platform
+              : 'Generate ' + v.platform + ' draft'}
+      </Button>
+
       <div className="button-row">
         <Button
-          disabled={busy}
+          disabled={busy || !validation.valid}
           onClick={() => run('saveVariant', { ...v, body })}
         >
           Save {v.platform} text
         </Button>
         <Button
           variant="outline"
-          disabled={busy}
+          disabled={busy || !validation.valid}
           onClick={() => run('saveVariant', { ...v, body, status: 'ready' })}
         >
           Mark ready
@@ -391,7 +447,9 @@ function VariantEditor({
             }
           />
         </Field>
-        <Button disabled={busy}>Schedule {v.platform}</Button>
+        <Button disabled={busy || !validation.valid}>
+          Schedule {v.platform}
+        </Button>
       </form>
       <div className="ai-action-box">
         <h3>Work on this version with AI</h3>
@@ -444,7 +502,7 @@ function VariantEditor({
         </Button>
       </div>
       {pending.map((s) => (
-        <Suggestion key={s.id} suggestion={s} />
+        <Suggestion key={s.id} suggestion={s} platform={v.platform} />
       ))}
       <Notice text={notice} />
     </section>
@@ -452,11 +510,14 @@ function VariantEditor({
 }
 function Suggestion({
   suggestion: s,
+  platform,
 }: {
   suggestion: Workspace['suggestions'][number];
+  platform: string;
 }) {
   const { run, busy, notice } = useManage();
   const [text, setText] = useState(s.suggested);
+  const validation = validatePlatform(platform, text);
   return (
     <div className="suggestion-box">
       <h3>{s.action} · Awaiting your approval</h3>
@@ -474,8 +535,11 @@ function Suggestion({
         </Field>
       </div>
       <div className="button-row">
+        <p className={validation.valid ? 'muted' : 'warning-text'}>
+          {validation.count} / {validation.limit}
+        </p>
         <Button
-          disabled={busy}
+          disabled={busy || !validation.valid}
           onClick={() =>
             run('decideSuggestion', {
               id: s.id,
@@ -498,5 +562,32 @@ function Suggestion({
       </div>
       <Notice text={notice} />
     </div>
+  );
+}
+export function PlatformTargets({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (v: string[]) => void;
+}) {
+  return (
+    <fieldset className="button-row">
+      <legend>Target platforms</legend>
+      {['x', 'linkedin'].map((p) => (
+        <label key={p}>
+          <input
+            type="checkbox"
+            checked={value.includes(p)}
+            onChange={(e) =>
+              onChange(
+                e.target.checked ? [...value, p] : value.filter((v) => v !== p),
+              )
+            }
+          />
+          {p === 'x' ? 'X' : 'LinkedIn'}
+        </label>
+      ))}
+    </fieldset>
   );
 }

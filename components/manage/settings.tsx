@@ -18,6 +18,66 @@ export function Settings({
         title="Settings"
         description="Your voice, your topics, and a clear view of AI usage."
       />
+      <form
+        className="panel form-stack mb-6"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const f = new FormData(e.currentTarget);
+          const pref = (platform: string) => ({
+            enabled: f.get(platform + 'Enabled') === 'on',
+            min: Number(f.get(platform + 'Min')),
+            max: Number(f.get(platform + 'Max')),
+          });
+          run('saveGenerationSettings', {
+            autoGenerate: f.get('autoGenerate') === 'on',
+            x: pref('x'),
+            linkedin: pref('linkedin'),
+          });
+        }}
+      >
+        <h2>Platform generation</h2>
+        <label>
+          <input
+            type="checkbox"
+            name="autoGenerate"
+            defaultChecked={data.generationSettings.autoGenerate}
+          />{' '}
+          Automatically generate selected platform drafts when creating a post
+        </label>
+        {(['x', 'linkedin'] as const).map((platform) => (
+          <fieldset key={platform} className="button-row">
+            <legend>{platform === 'x' ? 'X' : 'LinkedIn'} hashtags</legend>
+            <label>
+              <input
+                name={platform + 'Enabled'}
+                type="checkbox"
+                defaultChecked={data.generationSettings[platform].enabled}
+              />
+              Enable {platform} hashtags
+            </label>
+            <Field label={`${platform} minimum hashtags`}>
+              <input
+                name={platform + 'Min'}
+                type="number"
+                min={0}
+                max={10}
+                defaultValue={data.generationSettings[platform].min}
+              />
+            </Field>
+            <Field label={`${platform} maximum hashtags`}>
+              <input
+                name={platform + 'Max'}
+                type="number"
+                min={0}
+                max={10}
+                defaultValue={data.generationSettings[platform].max}
+              />
+            </Field>
+          </fieldset>
+        ))}
+        <Button disabled={busy}>Save generation preferences</Button>
+        <Notice text={notice} />
+      </form>
       <div className="split-layout">
         <form
           className="panel form-stack"

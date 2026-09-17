@@ -49,6 +49,19 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
     page.getByRole('heading', { name: 'Browser stage two story', exact: true }),
   ).toBeVisible();
   const postUrl = page.url();
+  await expect(page.getByLabel('X text', { exact: true })).toContainText('#');
+  await expect(page.getByLabel('LinkedIn text', { exact: true })).toContainText(
+    '#',
+  );
+  const generatedX = await page
+    .getByLabel('X text', { exact: true })
+    .inputValue();
+  await page.getByLabel('X text', { exact: true }).fill('界'.repeat(141));
+  await expect(page.getByText('282 / 280', { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Save x text', exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel('X text', { exact: true }).fill(generatedX);
   await page
     .getByLabel('X text', { exact: true })
     .fill(
@@ -124,6 +137,27 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
   await expect(page.getByLabel('LinkedIn text', { exact: true })).toContainText(
     'Capture the specific',
   );
+  await expect(page.getByLabel('X text', { exact: true })).toContainText('#');
+  await expect(page.getByLabel('LinkedIn text', { exact: true })).toContainText(
+    '#',
+  );
+  const originalLinkedIn = await page
+    .getByLabel('LinkedIn text', { exact: true })
+    .inputValue();
+  const originalX = await page
+    .getByLabel('X text', { exact: true })
+    .inputValue();
+  await page.getByRole('button', { name: 'Regenerate x', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: /Regenerate x.*Awaiting your approval/ }),
+  ).toBeVisible();
+  await expect(page.getByLabel('X text', { exact: true })).toHaveValue(
+    originalX,
+  );
+  await expect(page.getByLabel('LinkedIn text', { exact: true })).toHaveValue(
+    originalLinkedIn,
+  );
+  await page.getByRole('button', { name: 'Reject', exact: true }).click();
   await go('/media');
   await page.getByLabel('Choose media').setInputFiles({
     name: 'stage2-preview.png',

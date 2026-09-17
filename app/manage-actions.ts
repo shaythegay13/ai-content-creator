@@ -28,6 +28,13 @@ import {
 import { validateUpload } from '@/services/validation';
 import { timezone } from '@/lib/config';
 import { dailyWorkflow } from '@/services/jobs';
+import {
+  initializeVariants,
+  generateVariant,
+  platformSelection,
+} from '@/services/platform-generation';
+import { saveGenerationSettings } from '@/services/generation-settings';
+import { assertPlatform, hashtagsIn } from '@/lib/platform-validation';
 import { promptModules } from '@/prompts';
 export type ManageResult = { ok: boolean; message: string; data?: unknown };
 export async function manage(
@@ -42,6 +49,42 @@ export async function manage(
     switch (action) {
       case 'savePost':
         data = await savePost(db, user.id, input);
+        break;
+      case 'createContent': {
+        const selected = platformSelection.parse(
+          input.platforms || ['x', 'linkedin'],
+        );
+        const post = await savePost(db, user.id, input);
+        await initializeVariants(db, providers().ai, post.id, selected);
+        data = post;
+        break;
+      }
+      case 'generateVariant':
+        data = await generateVariant(
+          db,
+          providers().ai,
+          z.uuid().parse(input.postId),
+          z.enum(['x', 'linkedin']).parse(input.platform),
+          input.regenerate === true,
+        );
+        break;
+      case 'regenerateAll': {
+        const variants = await db
+          .select()
+          .from(s.contentPostVariants)
+          .where(eq(s.contentPostVariants.postId, id()));
+        for (const v of variants)
+          await generateVariant(
+            db,
+            providers().ai,
+            v.postId,
+            z.enum(['x', 'linkedin']).parse(v.platform),
+            true,
+          );
+        break;
+      }
+      case 'saveGenerationSettings':
+        data = await saveGenerationSettings(db, input);
         break;
       case 'saveIdea':
         data = await saveIdea(db, user.id, input);
@@ -65,7 +108,8 @@ export async function manage(
           db,
           user.id,
           id(),
-          String(input.platform || 'linkedin'),
+          platformSelection.parse(input.platforms || ['x', 'linkedin']),
+          providers().ai,
         );
         break;
       case 'archiveIdea':
@@ -176,9 +220,20 @@ export async function manage(
           if (p.decision !== 'rejected') {
             const body = p.decision === 'edited' ? p.editedText : r.suggested;
             if (!body?.trim()) throw new Error('Suggested text is empty');
+            const [variant] = await tx
+              .select()
+              .from(s.contentPostVariants)
+              .where(eq(s.contentPostVariants.id, r.variantId));
+            if (!variant) throw new Error('Variant not found');
+            assertPlatform(variant.platform, body);
             const updated = await tx
               .update(s.contentPostVariants)
-              .set({ body, approvedAt: new Date(), updatedAt: new Date() })
+              .set({
+                body,
+                hashtags: hashtagsIn(body),
+                approvedAt: new Date(),
+                updatedAt: new Date(),
+              })
               .where(
                 and(
                   eq(s.contentPostVariants.id, r.variantId),
@@ -278,11 +333,9 @@ export async function manage(
             coreIdea: item.summary,
             sourceReferences: item.sourceUrl ? [item.sourceUrl] : [],
           });
-          await saveVariant(db, {
-            postId: post.id,
-            platform: input.mode,
-            body: item.summary,
-          });
+          await initializeVariants(db, providers().ai, post.id, [
+            z.enum(['x', 'linkedin']).parse(input.mode),
+          ]);
           await db
             .insert(s.intelligencePostRelations)
             .values({ postId: post.id, intelligenceId: item.id });

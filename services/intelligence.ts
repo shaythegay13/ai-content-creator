@@ -11,6 +11,11 @@ import { generate, retrieveContext } from './ai';
 import { promptModules } from '../prompts';
 import { z } from 'zod';
 import { excerpt, relevantExcerpt } from '../lib/ai-budget';
+import {
+  validatePlatform,
+  assertPlatform,
+  hashtagsIn,
+} from '../lib/platform-validation';
 export function scoreItem(
   item: {
     title: string;
@@ -288,6 +293,21 @@ export async function reviewOne(
         .values({ key: cacheKey, value: result })
         .onConflictDoNothing();
   }
+  if (
+    result.suggestedRevision &&
+    !validatePlatform(variant.platform, result.suggestedRevision).valid
+  ) {
+    const { draftPlatform } = await import('./platform-generation');
+    result.suggestedRevision = (
+      await draftPlatform(
+        db,
+        provider,
+        variant.platform as 'x' | 'linkedin',
+        result.suggestedRevision,
+        'Compress revision, preserving evidence and factual meaning',
+      )
+    ).body;
+  }
   return {
     ...result,
     evidence: evidence.filter((i) => result.evidenceIds.includes(i.id)),
@@ -441,9 +461,15 @@ export async function decideReview(
         );
       const body = p.decision === 'edited' ? p.editedText : r.suggestedRevision;
       if (!body?.trim()) throw new Error('Revision cannot be empty');
+      assertPlatform(v.platform, body);
       const updated = await tx
         .update(s.contentPostVariants)
-        .set({ body, approvedAt: new Date(), updatedAt: new Date() })
+        .set({
+          body,
+          hashtags: hashtagsIn(body),
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
         .where(
           and(
             eq(s.contentPostVariants.id, v.id),

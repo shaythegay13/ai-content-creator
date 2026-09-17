@@ -412,16 +412,10 @@ function IdeaChoices({
           disabled={busy || !selected.length}
           onClick={async () => {
             for (const i of selected) {
-              const r = await run('savePost', {
+              await run('createContent', {
                 title: ideas[i].title,
                 coreIdea: ideas[i].note,
               });
-              if (r.ok)
-                await run('saveVariant', {
-                  postId: (r.data as { id: string }).id,
-                  platform: 'linkedin',
-                  body: ideas[i].note,
-                });
             }
             setSelected([]);
           }}

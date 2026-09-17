@@ -19,6 +19,14 @@ Migrations and idempotent seeds run on first database access. Persistent Postgre
 
 ## Working flows
 
+Idea conversion now generates drafts automatically for the selected targets (X and LinkedIn by default), then opens the editor. The original idea is retained. `AUTO_GENERATE_POST_VARIANTS=true` supplies the initial default; Settings → Platform generation persists an override and hashtag preferences. Disabling it creates blank variants for manual generation. X defaults to 1–2 relevant hashtags and LinkedIn to 3–5; both can be disabled or given different ranges.
+
+Platform generation uses distinct prompts plus the WritingProfile and structured `{platform, body, hashtags}` output. The stored body includes rendered hashtags, with a separate hashtag array for editing. The reusable `lib/platform-validation.ts` uses the official `twitter-text` weighted counter for X (Unicode/emoji and shortened URLs), with a hard 280 limit including hashtags. Validation runs before saving a generated result, approving revisions, marking ready or scheduling. Existing over-limit rows remain preserved, show a warning and cannot be scheduled until corrected. No text is blindly truncated.
+
+Invalid generated output gets at most two repair attempts (three total), using the fast model and a smaller body target for compression. Groq JSON-validation errors are recoverable within that same limit; network/quota failures remain explicit. Each platform persists its generation status and error independently. Retrying upserts the same unique post/platform row and concurrent retries share an in-flight claim. A stale claim can be retried after ten minutes. Regenerate affects only that platform and creates an approval proposal; Regenerate all creates proposals for each existing variant. Failed generation never deletes the idea or silently replaces the existing draft.
+
+Migration `0003_early_menace.sql` only adds hashtag, generation-status and error columns with safe defaults. No existing content is regenerated or discarded by migration. The mock provider implements the same structured generation/validation contract. Additional tests cover auto/manual mode, selected platforms, hashtag preferences, Unicode and URL counting, compression, JSON recovery, failures, concurrent retries and isolated regeneration.
+
 - Calendar: month, week and agenda; create from a date, drag entries to reschedule, and open the editor for precise platform times, duplication, archive and deletion.
 - Ideas and posts: persistent CRUD, filters, idea conversion, concept/core idea/pillar/notes/sources, separate X and LinkedIn variants, media attachments and status management.
 - Editor: platform rewriting and conversion with original/suggested comparison, accept/reject/edit, and explicit scheduling. Actions cannot mark variants as published.

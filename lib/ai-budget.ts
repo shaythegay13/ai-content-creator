@@ -15,13 +15,11 @@ export function relevantExcerpt(
 ) {
   if (!text || text.length <= limit) return text || '';
   const words = [...new Set(query.toLowerCase().match(/[a-z]{5,}/g) || [])];
-  const lines = text
-    .split('\n')
-    .map((line, index) => ({
-      line,
-      index,
-      score: words.filter((w) => line.toLowerCase().includes(w)).length,
-    }));
+  const lines = text.split('\n').map((line, index) => ({
+    line,
+    index,
+    score: words.filter((w) => line.toLowerCase().includes(w)).length,
+  }));
   const best = [...lines].sort((a, b) => b.score - a.score)[0];
   if (!best?.score) return excerpt(text, limit);
   return excerpt(

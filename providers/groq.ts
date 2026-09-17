@@ -6,6 +6,7 @@ import type {
 } from './contracts';
 import { createHash } from 'node:crypto';
 import { ModelBudget, requestBudget } from '../lib/ai-budget';
+import { AIOutputError } from './contracts';
 const state = globalThis as typeof globalThis & {
   groqBudgets?: Map<string, ModelBudget>;
 };
@@ -59,17 +60,23 @@ export class GroqAIProvider implements AIProvider {
         signal: AbortSignal.timeout(60000),
       },
     );
-    if (!response.ok)
+    if (!response.ok) {
+      const failure = await response.json().catch(() => ({}));
+      if (failure.error?.code === 'json_validate_failed')
+        throw new AIOutputError(
+          'Groq could not produce valid structured JSON.',
+        );
       throw new Error(
         `Groq request failed (${response.status}). Check model configuration, quota and permissions.`,
       );
+    }
     const result = await response.json();
     reservation.settle?.(
       (result.usage?.prompt_tokens ?? tokens - output) +
         (result.usage?.completion_tokens ?? output),
     );
     if (result.choices?.[0]?.finish_reason === 'length')
-      throw new Error(
+      throw new AIOutputError(
         'Groq reached the response budget. Ask for a shorter response; partial output was not applied.',
       );
     const message = result.choices?.[0]?.message;

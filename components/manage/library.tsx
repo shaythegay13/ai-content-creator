@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import type { Workspace } from '@/services/workspace';
 import { UploadForm } from '@/components/forms';
+import { PlatformTargets } from './editor';
 import {
   Title,
   Field,
@@ -15,6 +16,8 @@ import {
   safeLink,
 } from './shared';
 export function Ideas({ data }: { data: Workspace }) {
+  const [platforms, setPlatforms] = useState(['x', 'linkedin']);
+  const [converting, setConverting] = useState(false);
   const [initialDate] = useState(() => new Date().toISOString());
   const [query, setQuery] = useState('');
   const [source, setSource] = useState('');
@@ -31,6 +34,15 @@ export function Ideas({ data }: { data: Workspace }) {
       >
         <Button onClick={() => setSelected('new')}>New idea</Button>
       </Title>
+      <PlatformTargets value={platforms} onChange={setPlatforms} />
+      {converting && (
+        <p role="status">
+          Creating post…{' '}
+          {data.generationSettings.autoGenerate
+            ? `Generating ${platforms.map((p) => (p === 'x' ? 'X' : 'LinkedIn')).join(' and ')} drafts; each result will appear in the editor.`
+            : 'Automatic generation is disabled; preparing blank variants.'}
+        </p>
+      )}
       <div className="filter-bar">
         <input
           placeholder="Search ideas…"
@@ -84,12 +96,17 @@ export function Ideas({ data }: { data: Workspace }) {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      run('convertIdea', { id: i.id }, (d) =>
-                        router.push(`/posts/${(d as { id: string }).id}`),
-                      )
-                    }
+                    disabled={busy || !platforms.length}
+                    onClick={async () => {
+                      setConverting(true);
+                      try {
+                        await run('convertIdea', { id: i.id, platforms }, (d) =>
+                          router.push(`/posts/${(d as { id: string }).id}`),
+                        );
+                      } finally {
+                        setConverting(false);
+                      }
+                    }}
                   >
                     Convert to post
                   </Button>

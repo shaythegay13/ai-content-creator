@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import * as s from '../db/schema';
 import { requireUser } from './authentication';
+import { getGenerationSettings } from './generation-settings';
 export async function getWorkspace() {
   await requireUser();
   const db = await getDb();
@@ -80,6 +81,7 @@ export async function getWorkspace() {
     db.select().from(s.intelligencePostRelations),
   ]);
   return {
+    generationSettings: await getGenerationSettings(db),
     posts,
     variants,
     calendar,

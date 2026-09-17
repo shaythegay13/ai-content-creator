@@ -3,6 +3,14 @@ import { z } from 'zod';
 import type { Database } from '../db/client';
 import * as s from '../db/schema';
 import { localDateTime } from '../lib/time';
+import {
+  assertPlatform,
+  hashtagsIn,
+  type DraftPlatform,
+} from '../lib/platform-validation';
+import { initializeVariants, platformSelection } from './platform-generation';
+import type { AIProvider } from '../providers/contracts';
+import { MockAIProvider } from '../providers/mocks';
 const id = z.uuid();
 const text = z.string().max(30000);
 const tags = z.array(z.string().max(120)).max(100).default([]);
@@ -103,6 +111,8 @@ export async function saveVariant(db: Database, input: unknown) {
     })
     .parse(input);
   if (p.status === 'published') throw new Error('Publishing is disabled.');
+  if (p.body.trim() || ['ready', 'scheduled'].includes(p.status))
+    assertPlatform(p.platform, p.body);
   return db.transaction(async (tx) => {
     if (p.status === 'scheduled') {
       if (!p.id) throw new Error('Create the variant before scheduling it.');
@@ -115,7 +125,12 @@ export async function saveVariant(db: Database, input: unknown) {
     const [row] = p.id
       ? await tx
           .update(s.contentPostVariants)
-          .set({ ...p, approvedAt: null, updatedAt: new Date() })
+          .set({
+            ...p,
+            hashtags: hashtagsIn(p.body),
+            approvedAt: null,
+            updatedAt: new Date(),
+          })
           .where(
             and(
               eq(s.contentPostVariants.id, p.id),
@@ -123,7 +138,10 @@ export async function saveVariant(db: Database, input: unknown) {
             ),
           )
           .returning()
-      : await tx.insert(s.contentPostVariants).values(p).returning();
+      : await tx
+          .insert(s.contentPostVariants)
+          .values({ ...p, hashtags: hashtagsIn(p.body) })
+          .returning();
     if (!row) throw new Error('Variant not found');
     if (p.status !== 'scheduled')
       await tx
@@ -138,6 +156,12 @@ export async function scheduleVariant(db: Database, input: unknown) {
     .parse(input);
   const at = localDateTime(p.localTime, p.timezone);
   return db.transaction(async (tx) => {
+    const [saved] = await tx
+      .select()
+      .from(s.contentPostVariants)
+      .where(eq(s.contentPostVariants.id, p.variantId));
+    if (!saved) throw new Error('Variant not found');
+    assertPlatform(saved.platform, saved.body);
     const [variant] = await tx
       .update(s.contentPostVariants)
       .set({ status: 'scheduled', updatedAt: new Date() })
@@ -246,9 +270,13 @@ export async function convertIdea(
   db: Database,
   userId: string,
   ideaId: string,
-  platform = 'linkedin',
+  platforms: DraftPlatform[] | DraftPlatform = ['x', 'linkedin'],
+  provider: AIProvider = new MockAIProvider(),
 ) {
-  return db.transaction(async (tx) => {
+  const selected = platformSelection.parse(
+    typeof platforms === 'string' ? [platforms] : platforms,
+  );
+  const post = await db.transaction(async (tx) => {
     const db = tx as unknown as Database;
     const [idea] = await db
       .select()
@@ -263,7 +291,6 @@ export async function convertIdea(
       .update(s.contentPosts)
       .set({ ideaId: idea.id })
       .where(eq(s.contentPosts.id, post.id));
-    await saveVariant(db, { postId: post.id, platform, body: idea.rawNote });
     const media = await db
       .select()
       .from(s.ideaMediaRelations)
@@ -279,6 +306,8 @@ export async function convertIdea(
       .where(eq(s.contentIdeas.id, idea.id));
     return post;
   });
+  await initializeVariants(db, provider, post.id, selected);
+  return post;
 }
 export async function archiveOrDelete(
   db: Database,

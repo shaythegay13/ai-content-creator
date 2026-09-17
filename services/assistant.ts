@@ -17,6 +17,7 @@ import {
 import { generate, retrieveContext } from './ai';
 import { reviewOne } from './intelligence';
 import { dayKey } from './editorial';
+import { initializeVariants } from './platform-generation';
 import { boundedHistory, compactData, estimateTokens } from '../lib/ai-budget';
 const str = { type: 'string' };
 const specs: Record<string, Record<string, unknown>> = {
@@ -101,8 +102,11 @@ export async function executeTool(
         mediaIds: media.map((m) => m.mediaId),
       });
     }
-    case 'createPost':
-      return savePost(db, userId, args);
+    case 'createPost': {
+      const post = await savePost(db, userId, args);
+      await initializeVariants(db, provider, post.id);
+      return post;
+    }
     case 'updatePost': {
       const [old] = await db
         .select()

@@ -46,6 +46,7 @@ export type AIResult = {
   outputTokens: number;
   toolCalls?: ToolCall[];
 };
+export class AIOutputError extends Error {}
 export interface TranscriptionProvider {
   transcribe(
     data: Uint8Array,

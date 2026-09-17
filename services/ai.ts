@@ -2,7 +2,7 @@ import { and, desc, eq, ilike, or } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import * as s from '../db/schema';
 import type { AIProvider, AIRequest, AIResult } from '../providers/contracts';
-import { identity, writingProfile, promptModules } from '../prompts';
+import { identity, writingProfile } from '../prompts';
 import { compactData, excerpt, relevantExcerpt } from '../lib/ai-budget';
 export async function generate(
   db: Database,
@@ -172,27 +172,20 @@ export async function suggest(
       target = created;
     }
   }
-  const context = await retrieveContext(db, variant.body);
-  const result = await generate(
+  const [post] = await db
+    .select()
+    .from(s.contentPosts)
+    .where(eq(s.contentPosts.id, variant.postId));
+  const { draftPlatform } = await import('./platform-generation');
+  const draft = await draftPlatform(
     db,
     provider,
-    {
-      tier: action === 'Shorten' ? 'fast' : 'primary',
-      messages: [
-        {
-          role: 'system',
-          content: `${context}\n${targetPlatform !== variant.platform ? promptModules.conversion : action === 'Generate Draft' ? promptModules.drafting : promptModules.rewriting}\n${action.includes('Intelligence') ? promptModules.intelligence : action.includes('Trend') ? promptModules.trend : ''}`,
-        },
-        {
-          role: 'user',
-          content: `Action: ${action}. Return only suggested text. Preserve facts. Platform: ${targetPlatform}. Original: ${variant.body}\nAdditional context: ${extra}`,
-        },
-      ],
-    },
-    'rewrite',
+    targetPlatform as 'x' | 'linkedin',
+    variant.body || post?.coreIdea || post?.title || '',
+    action,
+    extra,
   );
-  const suggested =
-    provider.name === 'mock' ? mockRewrite(variant.body, action) : result.text;
+  const suggested = draft.body;
   const [row] = await db
     .insert(s.suggestions)
     .values({
