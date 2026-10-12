@@ -1,5 +1,6 @@
 'use client';
 import type { Workspace } from '@/services/workspace';
+import { ContentProfiles } from './content-profiles';
 import { Title, Field, Button, Notice, useManage, split } from './shared';
 export function Settings({
   data,
@@ -78,6 +79,7 @@ export function Settings({
         <Button disabled={busy}>Save generation preferences</Button>
         <Notice text={notice} />
       </form>
+      <ContentProfiles data={data} />
       <div className="split-layout">
         <form
           className="panel form-stack"

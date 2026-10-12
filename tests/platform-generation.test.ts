@@ -64,7 +64,16 @@ const response = (
 function provider(
   complete: (request: AIRequest) => Promise<ReturnType<typeof response>>,
 ): AIProvider {
-  return { name: 'test', complete, generate: async () => response('Unused') };
+  return {
+    name: 'test',
+    complete: async (request) => {
+      const task = JSON.parse(request.messages.at(-1)!.content!).task;
+      return task === 'platform-draft'
+        ? complete(request)
+        : mock.complete(request);
+    },
+    generate: async () => response('Unused'),
+  };
 }
 it('idea conversion automatically creates valid X and LinkedIn drafts with independently stored hashtags', async () => {
   const original = await idea();

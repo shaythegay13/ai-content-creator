@@ -403,6 +403,48 @@ export const appSettings = pgTable('app_settings', {
   value: jsonb().notNull(),
   ...dates(),
 });
+// User-authored context is separate from writing style and inferred knowledge.
+export const contentProfiles = pgTable('content_profiles', {
+  kind: text().primaryKey(),
+  fields: jsonb().$type<Record<string, string>>().notNull().default({}),
+  ...dates(),
+});
+export const knowledgeItems = pgTable(
+  'knowledge_items',
+  {
+    id: id(),
+    sourceKey: text().notNull(),
+    sourceHash: text().notNull(),
+    kind: text().notNull(),
+    statement: text().notNull(),
+    confidence: text().notNull(),
+    evidence: text().notNull(),
+    entities: text().array().notNull().default([]),
+    themes: text().array().notNull().default([]),
+    ...dates(),
+  },
+  (t) => [index('knowledge_source_idx').on(t.sourceKey)],
+);
+export const contentBriefs = pgTable('content_briefs', {
+  id: id(),
+  postId: uuid().references(() => contentPosts.id, { onDelete: 'set null' }),
+  cacheKey: text().notNull().unique(),
+  source: text().notNull(),
+  brief: jsonb().$type<Record<string, unknown>>().notNull(),
+  context: jsonb().$type<Record<string, unknown>>().notNull(),
+  ...dates(),
+});
+export const draftAssessments = pgTable('draft_assessments', {
+  id: id(),
+  briefId: uuid()
+    .notNull()
+    .references(() => contentBriefs.id, { onDelete: 'cascade' }),
+  platform: text().notNull(),
+  draft: text().notNull(),
+  critique: jsonb().$type<Record<string, unknown>>().notNull(),
+  revised: boolean().notNull().default(false),
+  ...dates(),
+});
 export const suggestions = pgTable('suggestions', {
   id: id(),
   variantId: uuid()

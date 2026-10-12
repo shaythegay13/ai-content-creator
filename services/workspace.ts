@@ -61,6 +61,10 @@ export async function getWorkspace() {
     transcripts,
     syncRuns,
     intelligencePosts,
+    contentProfiles,
+    contentBriefs,
+    draftAssessments,
+    generationSettings,
   ] = await Promise.all([
     db.select().from(s.contentTopics),
     db.select().from(s.mediaPostRelations),
@@ -79,9 +83,24 @@ export async function getWorkspace() {
     db.select().from(s.transcripts).orderBy(desc(s.transcripts.createdAt)),
     db.select().from(s.syncRuns).orderBy(desc(s.syncRuns.createdAt)),
     db.select().from(s.intelligencePostRelations),
+    db.select().from(s.contentProfiles),
+    db
+      .select()
+      .from(s.contentBriefs)
+      .orderBy(desc(s.contentBriefs.createdAt))
+      .limit(100),
+    db
+      .select()
+      .from(s.draftAssessments)
+      .orderBy(desc(s.draftAssessments.createdAt))
+      .limit(200),
+    getGenerationSettings(db),
   ]);
   return {
-    generationSettings: await getGenerationSettings(db),
+    contentProfiles,
+    contentBriefs,
+    draftAssessments,
+    generationSettings,
     posts,
     variants,
     calendar,

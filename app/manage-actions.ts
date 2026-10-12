@@ -7,8 +7,6 @@ import * as s from '@/db/schema';
 import { requireUser } from '@/services/authentication';
 import { providers } from '@/providers';
 import {
-  savePost,
-  saveIdea,
   saveVariant,
   scheduleVariant,
   duplicatePost,
@@ -36,6 +34,11 @@ import {
 import { saveGenerationSettings } from '@/services/generation-settings';
 import { assertPlatform, hashtagsIn } from '@/lib/platform-validation';
 import { promptModules } from '@/prompts';
+import { saveContentProfile } from '@/services/content-profiles';
+import {
+  saveIdeaWithKnowledge,
+  savePostWithKnowledge,
+} from '@/services/content-brain';
 export type ManageResult = { ok: boolean; message: string; data?: unknown };
 export async function manage(
   action: string,
@@ -44,9 +47,14 @@ export async function manage(
   try {
     const user = await requireUser();
     const db = await getDb();
+    const savePost = (target: typeof db, owner: string, value: unknown) =>
+      savePostWithKnowledge(target, owner, value, providers().ai);
     let data: unknown;
     const id = () => z.uuid().parse(input.id);
     switch (action) {
+      case 'saveContentProfile':
+        data = await saveContentProfile(db, input);
+        break;
       case 'savePost':
         data = await savePost(db, user.id, input);
         break;
@@ -86,9 +94,25 @@ export async function manage(
       case 'saveGenerationSettings':
         data = await saveGenerationSettings(db, input);
         break;
-      case 'saveIdea':
-        data = await saveIdea(db, user.id, input);
+      case 'saveIdea': {
+        const idea = await saveIdeaWithKnowledge(
+          db,
+          user.id,
+          input,
+          providers().ai,
+        );
+        data = idea;
+        if (idea.knowledgeError) {
+          revalidatePath('/', 'layout');
+          return {
+            ok: true,
+            message:
+              'Idea saved. Knowledge extraction could not finish; conversion will retry.',
+            data,
+          };
+        }
         break;
+      }
       case 'saveVariant':
         data = await saveVariant(db, input);
         break;
@@ -321,12 +345,17 @@ export async function manage(
           .from(s.intelligenceItems)
           .where(eq(s.intelligenceItems.id, op.intelligenceId));
         if (input.mode === 'idea') {
-          data = await saveIdea(db, user.id, {
-            title: item.title,
-            rawNote: item.summary,
-            source: 'notion',
-            sourceUrl: item.sourceUrl || '',
-          });
+          data = await saveIdeaWithKnowledge(
+            db,
+            user.id,
+            {
+              title: item.title,
+              rawNote: item.summary,
+              source: 'notion',
+              sourceUrl: item.sourceUrl || '',
+            },
+            providers().ai,
+          );
         } else if (input.mode === 'x' || input.mode === 'linkedin') {
           const post = await savePost(db, user.id, {
             title: item.title,

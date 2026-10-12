@@ -9,6 +9,11 @@ import { createContentSchema, validateUpload } from '@/services/validation';
 import { createMockReview } from '@/services/editorial';
 import { providers } from '@/providers';
 import { timezone } from '@/lib/config';
+import {
+  saveIdeaWithKnowledge,
+  savePostWithKnowledge,
+} from '@/services/content-brain';
+import { initializeVariants } from '@/services/platform-generation';
 export type ActionState = { ok: boolean; message: string };
 const refresh = () => revalidatePath('/', 'layout');
 export async function createContent(
@@ -19,27 +24,30 @@ export async function createContent(
     const user = await requireUser();
     const input = createContentSchema.parse(Object.fromEntries(form));
     const db = await getDb();
-    if (input.kind === 'idea')
-      await db
-        .insert(s.contentIdeas)
-        .values({ userId: user.id, title: input.title, rawNote: input.body });
-    else
-      await db.transaction(async (tx) => {
-        const [post] = await tx
-          .insert(s.contentPosts)
-          .values({ userId: user.id, title: input.title })
-          .returning();
-        await tx.insert(s.contentPostVariants).values(
-          (input.platform === 'both'
-            ? ['x', 'linkedin']
-            : [input.platform]
-          ).map((platform) => ({
-            postId: post.id,
-            platform,
-            body: input.body,
-          })),
-        );
-      });
+    if (input.kind === 'idea') {
+      await saveIdeaWithKnowledge(
+        db,
+        user.id,
+        { title: input.title, rawNote: input.body },
+        providers().ai,
+      );
+    } else {
+      const post = await savePostWithKnowledge(
+        db,
+        user.id,
+        {
+          title: input.title,
+          coreIdea: input.body,
+        },
+        providers().ai,
+      );
+      await initializeVariants(
+        db,
+        providers().ai,
+        post.id,
+        input.platform === 'both' ? ['x', 'linkedin'] : [input.platform],
+      );
+    }
     refresh();
     return {
       ok: true,

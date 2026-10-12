@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { DraftExplanation } from './draft-explanation';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Workspace } from '@/services/workspace';
@@ -12,6 +13,14 @@ import {
 } from '@/lib/platform-validation';
 import { Button, Field, Title, Notice, useManage } from './shared';
 const actions = [
+  'Try Different Angle',
+  'Make More Insightful',
+  'Make More Personal',
+  'Make More Industry-Focused',
+  'Use Current Intelligence',
+  'Use a Founder-Lesson Angle',
+  'Make More Contrarian',
+  'Make More Educational',
   'Generate Draft',
   'Improve Hook',
   'Shorten',
@@ -65,8 +74,8 @@ export function NewContent({ date = '' }: { date?: string }) {
         </Button>
         {busy && (
           <p role="status">
-            Creating post and generating selected platform drafts. This may wait
-            for your AI rate limit.
+            Understanding notes, choosing angles, and reviewing platform drafts.
+            This may wait for your AI rate limit.
           </p>
         )}
         <Notice text={notice} />
@@ -345,6 +354,7 @@ function VariantEditor({
           }}
         />
       </Field>
+      <DraftExplanation data={data} postId={v.postId} platform={v.platform} />
       <Field label={`${v.platform} hashtags`}>
         <input
           value={tagText}

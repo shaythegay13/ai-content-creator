@@ -176,12 +176,14 @@ export async function suggest(
     .select()
     .from(s.contentPosts)
     .where(eq(s.contentPosts.id, variant.postId));
-  const { draftPlatform } = await import('./platform-generation');
-  const draft = await draftPlatform(
+  const { strategicDraft } = await import('./platform-generation');
+  const draft = await strategicDraft(
     db,
     provider,
     targetPlatform as 'x' | 'linkedin',
-    variant.body || post?.coreIdea || post?.title || '',
+    [post?.title, post?.coreIdea, post?.notes].filter(Boolean).join('\n') ||
+      variant.body,
+    post?.id,
     action,
     extra,
   );

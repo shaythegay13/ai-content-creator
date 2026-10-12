@@ -29,6 +29,13 @@
       "when": 1789580123727,
       "tag": "0003_early_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789648653142,
+      "tag": "0004_ambitious_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

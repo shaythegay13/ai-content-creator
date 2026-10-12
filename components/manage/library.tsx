@@ -39,7 +39,7 @@ export function Ideas({ data }: { data: Workspace }) {
         <p role="status">
           Creating post…{' '}
           {data.generationSettings.autoGenerate
-            ? `Generating ${platforms.map((p) => (p === 'x' ? 'X' : 'LinkedIn')).join(' and ')} drafts; each result will appear in the editor.`
+            ? `Understanding notes, choosing angles, and drafting/reviewing ${platforms.map((p) => (p === 'x' ? 'X' : 'LinkedIn')).join(' and ')}. This may pause for the AI minute budget; each result will appear in the editor.`
             : 'Automatic generation is disabled; preparing blank variants.'}
         </p>
       )}

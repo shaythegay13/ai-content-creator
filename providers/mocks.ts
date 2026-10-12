@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mockBrainTask } from './mock-content-brain';
 import type {
   AIProvider,
   TranscriptionProvider,
@@ -30,6 +31,14 @@ export class MockAIProvider implements AIProvider {
     try {
       task = JSON.parse(last);
     } catch {}
+    const brain = task && mockBrainTask(task);
+    if (brain)
+      return {
+        text: JSON.stringify(brain),
+        model: 'mock',
+        inputTokens: 0,
+        outputTokens: 0,
+      };
     if (task?.task !== 'platform-draft')
       return this.generate(request.messages.map((m) => m.content).join('\n'));
     const source = withoutHashtags(String(task.source));
@@ -99,6 +108,18 @@ export class MockAIProvider implements AIProvider {
         ? first ||
           'What would change our mind? Test one assumption, listen carefully, and let the evidence shape the next decision.'
         : `${source}\n\nThe useful question is what this changes in practice. Start with one clear assumption, test it, and make the tradeoff explicit.\n\nWhat would you measure next?`;
+    if (request.messages[0]?.content?.includes('Strategic brief:')) {
+      const comparison =
+        /sportsbook/i.test(source) && /prediction/i.test(source);
+      body =
+        task.platform === 'x'
+          ? comparison
+            ? 'Same category, different customer jobs. Prediction markets and sportsbooks may need different success metrics. What behavior is each product actually trying to earn?'
+            : 'A signup counts a beginning. A return visit asks a harder question: did the product earn another decision? Choose the behavior before celebrating the metric.'
+          : comparison
+            ? 'A category label is not a customer strategy.\n\nIf prediction markets and sportsbooks attract people with different motivations, copying one product’s success metrics into the other could hide the behavior that matters. That is a hypothesis to investigate, not a market-wide conclusion from one conversation.\n\nBefore choosing a growth metric, ask: what job brought this participant here, and what would make them return? Compare the answers before copying the playbook.'
+            : 'A growth chart can answer the wrong question beautifully.\n\nAcquisition shows that someone tried the product. It does not establish what made the experience worth repeating.\n\nA useful next step is to name one behavior that would demonstrate value, then test whether the product earns it. Keep the hypothesis separate from the evidence.\n\nWhich decision would change if that behavior never happened?';
+    }
     if (task.action === 'Improve Hook' && task.platform === 'x')
       body = 'The question I keep coming back to:\n\n' + body;
     if (

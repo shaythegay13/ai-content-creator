@@ -7,17 +7,12 @@ import type {
   ToolDefinition,
 } from '../providers/contracts';
 import * as s from '../db/schema';
-import {
-  saveIdea,
-  savePost,
-  saveVariant,
-  scheduleVariant,
-  attachMedia,
-} from './content';
+import { savePost, saveVariant, scheduleVariant, attachMedia } from './content';
 import { generate, retrieveContext } from './ai';
 import { reviewOne } from './intelligence';
 import { dayKey } from './editorial';
 import { initializeVariants } from './platform-generation';
+import { saveIdeaWithKnowledge, savePostWithKnowledge } from './content-brain';
 import { boundedHistory, compactData, estimateTokens } from '../lib/ai-budget';
 const str = { type: 'string' };
 const specs: Record<string, Record<string, unknown>> = {
@@ -83,6 +78,10 @@ export async function executeTool(
   args: Record<string, unknown>,
 ) {
   const get = (key: string) => z.string().parse(args[key]);
+  const savePost = (target: Database, owner: string, input: unknown) =>
+    savePostWithKnowledge(target, owner, input, provider);
+  const saveIdea = (target: Database, owner: string, input: unknown) =>
+    saveIdeaWithKnowledge(target, owner, input, provider);
   switch (name) {
     case 'createIdea':
       return saveIdea(db, userId, args);
@@ -239,41 +238,54 @@ export async function approveTool(
   id: string,
   approved: boolean,
 ) {
-  return db.transaction(async (tx) => {
-    const [call] = await tx
-      .update(s.assistantToolCalls)
-      .set({
-        status: approved ? 'executing' : 'rejected',
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(s.assistantToolCalls.id, id),
-          eq(s.assistantToolCalls.status, 'pending'),
-        ),
-      )
-      .returning();
-    if (!call) throw new Error('This tool call has already been handled');
-    if (!approved) return { rejected: true };
+  const [call] = await db
+    .update(s.assistantToolCalls)
+    .set({ status: approved ? 'executing' : 'rejected', updatedAt: new Date() })
+    .where(
+      and(
+        eq(s.assistantToolCalls.id, id),
+        eq(s.assistantToolCalls.status, 'pending'),
+      ),
+    )
+    .returning();
+  if (!call) throw new Error('This tool call has already been handled');
+  if (!approved) return { rejected: true };
+  try {
+    // AI calls can pause for rate limits; do not hold a database transaction during them.
     const result = await executeTool(
-      tx as unknown as Database,
+      db,
       userId,
       provider,
       call.name,
       call.arguments,
     );
-    await tx
-      .update(s.assistantToolCalls)
-      .set({ status: 'complete', result, updatedAt: new Date() })
-      .where(eq(s.assistantToolCalls.id, call.id));
-    await tx.insert(s.aiMessages).values({
-      conversationId: call.conversationId,
-      role: 'assistant',
-      content: `Completed ${call.name}. Result: ${JSON.stringify(result)}`,
+    await db.transaction(async (tx) => {
+      await tx
+        .update(s.assistantToolCalls)
+        .set({ status: 'complete', result, updatedAt: new Date() })
+        .where(eq(s.assistantToolCalls.id, call.id));
+      await tx.insert(s.aiMessages).values({
+        conversationId: call.conversationId,
+        role: 'assistant',
+        content: `Completed ${call.name}. Result: ${JSON.stringify(result)}`,
+      });
     });
     return result;
-  });
+  } catch (error) {
+    await db
+      .update(s.assistantToolCalls)
+      .set({
+        status: 'failed',
+        result: {
+          error: error instanceof Error ? error.message : 'Action failed',
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(s.assistantToolCalls.id, call.id));
+    throw error;
+  }
 }
+
 export async function assistantChat(
   db: Database,
   userId: string,

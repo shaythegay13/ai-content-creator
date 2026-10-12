@@ -35,6 +35,20 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
     await expect(page.locator('main h1')).toBeVisible();
     await expect(page.getByText('Workspace unavailable')).toHaveCount(0);
   }
+  await go('/settings');
+  await page.getByText('About my company', { exact: true }).click();
+  await page
+    .getByLabel('Name', { exact: true })
+    .fill('Browser fixture company');
+  await page
+    .getByLabel('Priorities', { exact: true })
+    .fill('Understand customer workflows');
+  await page
+    .getByRole('button', { name: 'Save about my company', exact: true })
+    .click();
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Saved' }).first(),
+  ).toBeVisible();
   await go('/create');
   await page
     .getByLabel('Title', { exact: true })
@@ -49,6 +63,12 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
     page.getByRole('heading', { name: 'Browser stage two story', exact: true }),
   ).toBeVisible();
   const postUrl = page.url();
+  await page.getByText('Why this draft?', { exact: true }).first().click();
+  await expect(
+    page.getByText('Source insight:', { exact: true }).first(),
+  ).toBeVisible();
+  await page.getByText('View context used', { exact: true }).first().click();
+  await expect(page.getByText(/Browser fixture company/).first()).toBeVisible();
   await expect(page.getByLabel('X text', { exact: true })).toContainText('#');
   await expect(page.getByLabel('LinkedIn text', { exact: true })).toContainText(
     '#',
@@ -135,7 +155,7 @@ test('content management, approvals, audio, Notion mock and mobile', async ({
     }),
   ).toBeVisible();
   await expect(page.getByLabel('LinkedIn text', { exact: true })).toContainText(
-    'Capture the specific',
+    '#',
   );
   await expect(page.getByLabel('X text', { exact: true })).toContainText('#');
   await expect(page.getByLabel('LinkedIn text', { exact: true })).toContainText(

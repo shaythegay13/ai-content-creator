@@ -1,5 +1,20 @@
 # Fieldnotes
 
+> **⚠️ Unfinished project.** This project was never completed. It runs locally with mock data, but several planned features (real X/LinkedIn publishing, analytics, trend collection, a background scheduler and production deployment) were never built. Expect rough edges and incomplete workflows.
+
+## What this project is
+
+Fieldnotes is an AI-assisted content creation workspace for planning, drafting and scheduling social media posts (X and LinkedIn). The goal was a single place to:
+
+- Capture ideas (typed or by voice memo) and turn them into platform-specific drafts using AI (Groq models).
+- Pull in research from Notion daily briefs and use it to suggest new posts or update existing drafts.
+- Run a "Morning Review" that checks scheduled drafts against fresh research and recommends keeping, updating or replacing them.
+- Manage everything in a content calendar, media library and editor, with every AI change requiring human approval.
+
+The sections below are the original technical notes.
+
+## Overview
+
 Private, single-user content management and content intelligence workspace. Stage 2 adds working editorial workflows, Groq adapters and read-only Notion ingestion. X and LinkedIn publishing remain disabled.
 
 ## Run locally
@@ -118,3 +133,19 @@ Database utilities: `npm.cmd run db:seed` also applies migrations, `npm.cmd run 
 ## Remaining boundaries
 
 Real Groq/Notion account behavior requires your credentials and model/database configuration; automated adapter tests use mocked HTTP. No real X/LinkedIn publishing, social metrics ingestion, Gemini analysis, R2 storage, Telegram, public deployment or unattended daily scheduler is included. Morning Review runs from the UI; a future authenticated scheduler can call `dailyWorkflow`. AI output remains a draft for human review. Pricing is user-supplied and estimates cover token usage, not provider billing reconciliation.
+
+## Strategic content brain
+
+Idea conversion and generation now run knowledge ingestion, relevant context retrieval, a shared strategic brief, platform-specific drafting, a critic, and at most one substantive revision. X/hashtag validation remains mandatory. A factual defect triggers one final audit; unresolved unsupported claims fail safely without replacing existing text. Regeneration remains a proposal requiring approval.
+
+Settings separates **About me**, **About my company**, **Social strategy**, **Content preferences**, and the existing **Writing profile**. Profiles start empty; sample data is never used to populate them. Source notes are preserved. Extracted knowledge retains its source hash, exact supporting excerpt, category, entities/themes, and `user_claim` versus `inference`; neither label means independent verification.
+
+`ContentContextService` bounds and ranks retrieved records rather than dumping the database. Context may include related knowledge, recent posts, dated Notion excerpts with links, mock trends, decisions, and genuine performance. Simulated publications are excluded from performance evidence; comparative wording patterns require at least five eligible genuine posts in each same-platform cohort (each with at least 100 impressions). These are descriptive associations, not engagement predictions. Retrieval is lexical; incomplete profiles and missing evidence are shown explicitly.
+
+**Why this draft?** shows the stored brief, objective, platform decision and critique. **View context used** lists record IDs and excerpts from the brief's retrieval packet, including source links. Platform and critic calls use smaller excerpts as needed. The optional assessment view exposes concise editorial summaries and rubric scores, never private reasoning tokens. It describes the latest generation; manual edits may differ.
+
+Extraction is cached by source hash, and X/LinkedIn reuse one brief when source, context, action and model are unchanged. Input excerpts and repair prompts are bounded below the existing 6,000-token request envelope; the Groq ledger still enforces configured per-model limits. Structured output has at most one schema retry; platform validation has at most three attempts; substantive revision has at most one pass. Quality requires more calls than simple paraphrasing, and workflows may pause for the minute budget. Per-step usage appears in Settings.
+
+Migration `0004` only adds profile, knowledge, brief and assessment tables. It does not rewrite existing content. Older drafts gain an explanation when regenerated. No Prompt 3 trend integration or external publishing is added.
+
+For an isolated live acceptance run using configured Groq credentials: `npx tsx --env-file=.env.local scripts/demo-content-brain.ts`. This uses an in-memory database with clearly synthetic test notes/profiles and writes `.local/content-brain-demo.json`; it does not change the owner's profiles or posts.
