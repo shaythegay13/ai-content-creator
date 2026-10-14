@@ -1,151 +1,169 @@
 # Fieldnotes
 
-> **⚠️ Unfinished project.** This project was never completed. It runs locally with mock data, but several planned features (real X/LinkedIn publishing, analytics, trend collection, a background scheduler and production deployment) were never built. Expect rough edges and incomplete workflows.
+Fieldnotes is a local, single-user workspace for turning notes into X and LinkedIn drafts, checking those drafts against research, and putting them on a calendar. It is an unfinished portfolio project by Shay Bouchles. It runs on this machine with sample data and no API keys. Scheduling updates the local calendar. Nothing is sent to X or LinkedIn.
 
-## What this project is
+![Home dashboard with today’s scheduled posts and sample opportunities](docs/screenshots/dashboard.png)
 
-Fieldnotes is an AI-assisted content creation workspace for planning, drafting and scheduling social media posts (X and LinkedIn). The goal was a single place to:
+## What it does
 
-- Capture ideas (typed or by voice memo) and turn them into platform-specific drafts using AI (Groq models).
-- Pull in research from Notion daily briefs and use it to suggest new posts or update existing drafts.
-- Run a "Morning Review" that checks scheduled drafts against fresh research and recommends keeping, updating or replacing them.
-- Manage everything in a content calendar, media library and editor, with every AI change requiring human approval.
+The App Router exposes these screens:
 
-The sections below are the original technical notes.
+| Route                              | What you can do                                                                                                                                                                                                                                      |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                | Today’s scheduled variants, pipeline counts, intelligence rows, and seeded impression totals. “Worth exploring” lists new content opportunities, or seeded trend rows labeled sample when none are new. The impression chart uses fixed bar heights. |
+| `/ideas`                           | Save notes, filter them, and convert a note into a post for the selected platforms (X and LinkedIn).                                                                                                                                                 |
+| `/create`, `/posts`, `/posts/[id]` | Edit one concept with separate X and LinkedIn variants, attach media, duplicate, archive, or delete.                                                                                                                                                 |
+| `/calendar`                        | Month, week, and agenda views in `APP_TIMEZONE`. Create from a day and drag an entry to another day.                                                                                                                                                 |
+| `/media`                           | Upload JPEG, PNG, WebP, GIF, MP4, WebM, MP3, M4A, WAV, or OGG up to 20 MB. Preview local files and filter used or unused assets.                                                                                                                     |
+| `/intelligence`                    | Sync a read-only Notion daily brief, or the sample provider when `NOTION_API_KEY` is empty. Search, filter, dismiss, and save an item as an idea. Each row shows its source.                                                                         |
+| `/morning-review`                  | Sync intelligence and review scheduled drafts. Recommendations are `KEEP`, `MINOR_UPDATE`, `MAJOR_UPDATE`, `REPLACE`, or an additional-post suggestion. Original text stays until you accept a revision.                                             |
+| `/trends`                          | Act on content opportunities from intelligence: create an idea, draft X or LinkedIn, save for later, or dismiss. Seeded trend signals can also be saved as ideas.                                                                                    |
+| `/analytics`                       | Read seeded metric rows. The page states that no live analytics provider is connected.                                                                                                                                                               |
+| `/assistant`                       | Chat with Groq when `GROQ_API_KEY` is set, otherwise with the mock assistant. Write tools wait for approval. Voice notes can be transcribed, edited, and saved as ideas.                                                                             |
+| `/settings`                        | Set platform-generation and hashtag preferences, four content profiles, the writing profile, topics, and view provider status plus recorded token usage.                                                                                             |
+| `/search`                          | Substring search over the loaded posts, ideas, media, intelligence, and trends.                                                                                                                                                                      |
 
-## Overview
+Idea conversion can generate both platform drafts immediately. That default follows `AUTO_GENERATE_POST_VARIANTS` until Settings saves an override. Generation asks the model for `{ platform, body, hashtags }`, then checks X with the `twitter-text` weighted counter (280, including hashtags and shortened URLs). Invalid output is repaired up to three attempts. A failed generation keeps the existing draft. Regenerating an existing variant stores a suggestion until you approve it.
 
-Private, single-user content management and content intelligence workspace. Stage 2 adds working editorial workflows, Groq adapters and read-only Notion ingestion. X and LinkedIn publishing remain disabled.
+When a model is configured, drafting also runs the content brain in `services/content-brain.ts`: it extracts a few knowledge items from the note, builds one strategic brief, drafts the platform, critiques that draft, and allows one revision when the critique finds a material weakness or an unsupported claim. A remaining unsupported claim is rejected and the previous text is left in place. On the editor, “Why this draft?” and “View context used” read that stored brief. Content profiles start empty. The seed does not fill them.
 
-## Run locally
+The mock assistant queues an approval when a message starts with `Create idea:` or `Create post:`. Any other mock reply is a fixed three-angle template. With Groq, the assistant can choose tools for up to three rounds. Those tools search the workspace and can queue idea, post, variant, schedule, attachment, and intelligence-to-idea changes. There is no publish tool.
 
-Requires Node.js 22+ (tested with 24.19.0). No Docker, database service or API keys are needed for the mock workflow.
+Sample intelligence, sample metrics, and sample trends are labeled in the interface. They are fixtures for the local workspace.
 
-```powershell
-npm.cmd install
-# Only on first setup; preserve an existing .env.local:
-Copy-Item .env.example .env.local
-npm.cmd run dev
+## Stack
+
+- Node.js 22 or newer (`package.json` `engines`)
+- Next.js 16 App Router, React 19, TypeScript (strict)
+- Tailwind CSS 4
+- Drizzle ORM and ordered SQL migrations in `drizzle/`
+- Embedded PostgreSQL through PGlite for local mode; a Neon HTTP client is present for a later hosted database
+- Auth.js (`next-auth` v5) with a Google provider limited to `OWNER_EMAIL`
+- Zod, `twitter-text`, Lucide, and the Radix / `class-variance-authority` button
+- Vitest for unit and integration tests, Playwright for the browser workflow
+
+## Architecture
+
+```text
+Browser
+  app/page.tsx, app/[section]/page.tsx, app/posts/[id]/page.tsx
+        │  server actions
+        ▼
+  app/manage-actions.ts  ·  app/actions.ts
+        │
+        ▼
+  services/          content, platform generation, content brain,
+                     intelligence, assistant, jobs
+        │
+        ├── db/      Drizzle schema (39 tables) + PGlite, or Neon when not local
+        └── providers/
+              Groq chat + speech     when GROQ_API_KEY is set
+              Notion read-only       when NOTION_API_KEY is set
+              local media files
+              mocks                  AI, speech, intelligence, and the unused
+                                     publisher / analytics / trends / chat /
+                                     media-understanding adapters
 ```
 
-Open http://127.0.0.1:3000. Use `npm` on other shells. The Windows scripts bind to loopback. Local development automatically signs in as the owner; keep this mode private. `LOCAL_DEV_MODE=true` is required when using `npm.cmd run build` followed by `npm.cmd run start`. Public production operation is not enabled.
+`providers/index.ts` is server-only and throws outside local mode: `Production providers are not enabled in this local workspace.` `LOCAL_DEV_MODE=true` also throws if `VERCEL` is set. In local development the app signs in as the seeded owner (`name: Shay`, `email: owner@localhost.test`) through `MockAuthenticationProvider`. `next start` is production, so it needs `LOCAL_DEV_MODE=true` to keep that path.
 
-Migrations and idempotent seeds run on first database access. Persistent PostgreSQL data is in `.local/postgres`, media in `.local/media`; both are Git-ignored. `LOCAL_DATA_DIR` can override the root. Run only one process against a given data directory, and stop the app before database CLI commands or backups. Seed schedules use the first seed day in `APP_TIMEZONE`; later starts preserve dates and user changes.
+Migrations and the idempotent seeds run on the first database open. Local data lives in `.local/postgres` and uploads in `.local/media` (both gitignored). `LOCAL_DATA_DIR` moves that root. Run one process per data directory.
 
-## Working flows
+Groq calls use `AI_PRIMARY_MODEL`, with `AI_FAST_MODEL` for the fast tier and `AI_TRANSCRIPTION_MODEL` for speech. `lib/ai-budget.ts` and `providers/groq.ts` keep a process-local reservation ledger at 30 requests/minute, 1,000/day, 8,000 tokens/minute, and 200,000 tokens/day per model. The ledger resets when the process restarts. Optional `AI_MODEL_PRICING_JSON` only estimates cost from token counts.
 
-Idea conversion now generates drafts automatically for the selected targets (X and LinkedIn by default), then opens the editor. The original idea is retained. `AUTO_GENERATE_POST_VARIANTS=true` supplies the initial default; Settings → Platform generation persists an override and hashtag preferences. Disabling it creates blank variants for manual generation. X defaults to 1–2 relevant hashtags and LinkedIn to 3–5; both can be disabled or given different ranges.
+`services/jobs.ts` exports `dailyWorkflow` (sync, then review) and `isReviewDue`. The Morning Review buttons call the workflow. `isReviewDue` has no caller, and no scheduler process is installed.
 
-Platform generation uses distinct prompts plus the WritingProfile and structured `{platform, body, hashtags}` output. The stored body includes rendered hashtags, with a separate hashtag array for editing. The reusable `lib/platform-validation.ts` uses the official `twitter-text` weighted counter for X (Unicode/emoji and shortened URLs), with a hard 280 limit including hashtags. Validation runs before saving a generated result, approving revisions, marking ready or scheduling. Existing over-limit rows remain preserved, show a warning and cannot be scheduled until corrected. No text is blindly truncated.
+Deeper adapter notes: [`providers/README.md`](providers/README.md). A dated live generation note: [`docs/platform-generation-demo.md`](docs/platform-generation-demo.md). The finish plan: [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
-Invalid generated output gets at most two repair attempts (three total), using the fast model and a smaller body target for compression. Groq JSON-validation errors are recoverable within that same limit; network/quota failures remain explicit. Each platform persists its generation status and error independently. Retrying upserts the same unique post/platform row and concurrent retries share an in-flight claim. A stale claim can be retried after ten minutes. Regenerate affects only that platform and creates an approval proposal; Regenerate all creates proposals for each existing variant. Failed generation never deletes the idea or silently replaces the existing draft.
+## Screenshots
 
-Migration `0003_early_menace.sql` only adds hashtag, generation-status and error columns with safe defaults. No existing content is regenerated or discarded by migration. The mock provider implements the same structured generation/validation contract. Additional tests cover auto/manual mode, selected platforms, hashtag preferences, Unicode and URL counting, compression, JSON recovery, failures, concurrent retries and isolated regeneration.
+Taken from `npm run dev` on 14 October 2026 with the seeded workspace, no Groq key, and no Notion key. Publishing stayed off. The Morning Review frame is the mock provider’s review of that day’s three scheduled variants.
 
-- Calendar: month, week and agenda; create from a date, drag entries to reschedule, and open the editor for precise platform times, duplication, archive and deletion.
-- Ideas and posts: persistent CRUD, filters, idea conversion, concept/core idea/pillar/notes/sources, separate X and LinkedIn variants, media attachments and status management.
-- Editor: platform rewriting and conversion with original/suggested comparison, accept/reject/edit, and explicit scheduling. Actions cannot mark variants as published.
-- Media: local image previews, audio/video playback with range support, metadata/tags, used/unused filters and linked posts. Upload limit is 20 MB. Seed media are labeled metadata examples.
-- Assistant: persistent conversations, writing-profile/context retrieval, structured tools that read actual workspace records, and approval-gated write actions. Mock mode supports explicit `Create idea: ...` and `Create post: ...` commands plus the tool composer; unrestricted natural-language reasoning requires Groq.
-- Voice: upload, mock or Groq transcription, editable saved transcript, suggested content ideas, select ideas to save or turn into drafts.
-- Intelligence: read-only Notion sync or sample data, searchable/filterable records, provenance, source metadata, interpretable relevance reasons, dismissals and content opportunities.
-- Morning Review: manual sync-and-review, KEEP/MINOR UPDATE/MAJOR UPDATE/REPLACE recommendations, supporting evidence, additional-post suggestions and persistent decision history. Revisions change a draft only after approval, and stale originals prevent accidental overwrites. Identical review inputs reuse a review; changed inputs produce new history.
-- Settings: complete writing profile, editable topics, provider status and usage by request/model with optional estimated costs. Global search covers posts, variants, ideas, intelligence, media and trends.
+![October calendar with three scheduled posts on the 14th](docs/screenshots/calendar.png)
 
-The seeded policy/research examples demonstrate unchanged, minor-update and major-update posts plus a new-post opportunity. All sample intelligence and simulated metrics are labeled. They are demonstrations, not current news or actual social performance.
+![Ideas list and the capture form](docs/screenshots/ideas.png)
+
+![X variant editor with the weighted 147/280 count, schedule control, and AI suggestion action](docs/screenshots/editor.png)
+
+![Morning Review after the mock provider marked one keep and two suggested changes](docs/screenshots/morning-review.png)
+
+![Assistant in Mock AI mode, with the approval composer and voice-note upload](docs/screenshots/assistant.png)
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Open http://127.0.0.1:3000. The dev script binds to loopback. An empty `.env.local` is enough for the mock workspace: local mode is on during `next dev` unless `LOCAL_DEV_MODE=false`.
+
+For a production build on this machine:
+
+```bash
+# .env.local
+LOCAL_DEV_MODE=true
+
+npm run build
+npm run start
+```
+
+`npm run start` also binds to 127.0.0.1. Keep that process private. Hosted production is not wired up.
+
+Useful commands:
+
+| Command                                  | Effect                                                                                                                |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`                      | `tsc --noEmit`                                                                                                        |
+| `npm run lint`                           | ESLint                                                                                                                |
+| `npm test`                               | Vitest                                                                                                                |
+| `npm run build`                          | Next.js production build                                                                                              |
+| `npm run test:e2e`                       | Playwright against a temporary data directory on port 3100. The config requests Microsoft Edge (`channel: 'msedge'`). |
+| `npm run db:migrate` / `npm run db:seed` | Both open the local database, which applies migrations and the idempotent seed.                                       |
+| `npm run db:generate`                    | Drizzle Kit SQL generation.                                                                                           |
+| `npm run db:migrate:production`          | Migrates `DATABASE_URL` through the Neon client and inserts no sample data.                                           |
+
+Stop `next dev` before `next build`. They share Next’s build lock.
 
 ## Configuration
 
-Copy values into `.env.local` and restart the server. Never commit credentials.
+Copy `.env.example` to `.env.local`. The example file lists names with empty values. Restart the server after changes.
 
-| Variables                          | Purpose                                                                                                               |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `LOCAL_DEV_MODE`, `LOCAL_DATA_DIR` | Local owner bypass and optional persistent-data location                                                              |
-| `APP_TIMEZONE`                     | IANA timezone, default `America/New_York`; used for calendar and daily review                                         |
-| `GROQ_API_KEY`, `AI_PRIMARY_MODEL` | Enable real Groq chat, drafting, ideation and editorial analysis; choose a model available in your Groq account       |
-| `AI_FAST_MODEL`                    | Optional model for low-cost shortening and requests marked fast; primary is the fallback                              |
-| `AI_TRANSCRIPTION_MODEL`           | Groq speech model; missing key or model uses explicitly labeled mock transcription                                    |
-| `AI_MODEL_PRICING_JSON`            | Optional per-million-token rates, e.g. `{"your-model":{"input":0.1,"output":0.2}}`; absent rates display unknown cost |
-| `NOTION_API_KEY`                   | Enables live read-only Notion requests                                                                                |
-| `NOTION_DAILY_BRIEF_DATABASE_ID`   | Database shared with the Notion integration; its data sources are queried                                             |
-| `NOTION_DAILY_BRIEF_PAGE_ID`       | Alternative page shared with the integration; imports the page and direct child pages                                 |
-| `NOTION_PROPERTY_MAPPING_JSON`     | Overrides default property names, e.g. `{"title":"Title","publishedAt":"Published","sourceUrl":"Source URL"}`         |
-| `DAILY_INTELLIGENCE_REVIEW_TIME`   | Default `07:00`; scheduler helper supports this threshold, but no background scheduler is installed                   |
+| Name                                                                                                                                          | Read by the app                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LOCAL_DEV_MODE`                                                                                                                              | `true` forces local mode. `false` disables the dev bypass. On Vercel, `true` throws.                                                        |
+| `LOCAL_DATA_DIR`                                                                                                                              | Optional root for the local database and media directories. Empty uses `.local`.                                                            |
+| `APP_TIMEZONE`                                                                                                                                | IANA zone for the calendar and review day. Empty means `America/New_York`.                                                                  |
+| `AUTO_GENERATE_POST_VARIANTS`                                                                                                                 | Any value other than `false` turns on automatic drafts until Settings saves a preference.                                                   |
+| `GROQ_API_KEY`, `AI_PRIMARY_MODEL`, `AI_FAST_MODEL`                                                                                           | Real chat, drafting, critique, and editorial calls.                                                                                         |
+| `AI_TRANSCRIPTION_MODEL`                                                                                                                      | Groq speech. Missing key or model uses the labeled mock transcript.                                                                         |
+| `AI_REASONING_EFFORT`                                                                                                                         | Passed through on Groq chat requests when set.                                                                                              |
+| `AI_MODEL_PRICING_JSON`                                                                                                                       | Optional per-million-token rates, shaped as `{"model-id":{"input":0.1,"output":0.2}}`.                                                      |
+| `NOTION_API_KEY`                                                                                                                              | Switches intelligence from the sample brief to live read-only Notion.                                                                       |
+| `NOTION_DAILY_BRIEF_DATABASE_ID`, `NOTION_DAILY_BRIEF_PAGE_ID`                                                                                | Database wins when both are set.                                                                                                            |
+| `NOTION_LAYOUT`                                                                                                                               | `items` imports one row per page. Any other value, including empty, uses the daily ISO-titled brief.                                        |
+| `NOTION_BRIEF_DATE`                                                                                                                           | `YYYY-MM-DD` override. Empty uses today’s date in `APP_TIMEZONE`. The Intelligence screen can also pick a day.                              |
+| `NOTION_PROPERTY_MAPPING_JSON`                                                                                                                | Optional property-name overrides.                                                                                                           |
+| `DAILY_INTELLIGENCE_REVIEW_TIME`                                                                                                              | Shown in Settings. No scheduler reads it.                                                                                                   |
+| `DATABASE_URL`                                                                                                                                | Neon URL for non-local mode and `db:migrate:production`.                                                                                    |
+| `AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OWNER_EMAIL`                                                                      | Auth.js Google sign-in for the non-local owner check.                                                                                       |
+| `GEMINI_API_KEY`, `MEDIA_UNDERSTANDING_MODEL`                                                                                                 | Present in the example only. No application code reads them. Media understanding stays on the mock adapter, and nothing calls that adapter. |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_R2_ACCESS_KEY_ID`, `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, `CLOUDFLARE_R2_BUCKET`, `CLOUDFLARE_R2_PUBLIC_URL` | Present in the example only. Media is stored on the local disk.                                                                             |
+| `X_CLIENT_ID`, `X_CLIENT_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET`, `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`                   | Present in the example only. Publishing code paths reject a `published` status.                                                             |
+| `TELEGRAM_BOT_TOKEN`                                                                                                                          | Present in the example only. `MockChatChannel` is constructed and never called.                                                             |
 
-Notion defaults: Name, Category, Summary, URL, Source, Author, Date, Companies, Jurisdiction, Topics, Tags, Institution, Journal, Abstract, Bill, Agency, Status, Important dates. Configure a database or page ID when enabling Notion. Integration permissions must include reading the selected content. The database takes precedence when both IDs are set. The app never writes back to Notion.
+## Verification in this workspace
 
-Production/auth, Gemini, R2, social and Telegram environment placeholders remain in `.env.example`. They do not enable those integrations. Analytics and trend collection are still mocked. Media understanding remains manual/mock.
+On Node 22.14.0, after pinning Next.js and `eslint-config-next` to `~16.3.8`: `npm run typecheck`, `npm run lint`, `npm test` (61 tests), and `npm run build` succeeded. Playwright was not run because `playwright.config.ts` requests Microsoft Edge. Chrome captured the screenshots, including a click on “Review current drafts”.
 
-## Architecture and database
+## Contributors
 
-### Configured models and request budgets
+From the git history on `master`:
 
-The environment template and local settings use `openai/gpt-oss-120b` for primary work, `openai/gpt-oss-20b` for fast work, and `whisper-large-v3-turbo` for transcription. Model identifiers stay in configuration. `AI_REASONING_EFFORT=low` reduces reasoning overhead on these GPT-OSS models.
+- **Shay Bouchles** — strategic content brain, and the note that the project was unfinished.
+- **Codex** — workspace foundation, local editorial workflows, dated Notion import and Groq budgets, and automatic validated platform drafts.
 
-Each GPT-OSS model has its own local rolling budget: 30 requests/minute, 1,000/day, 8,000 tokens/minute and 200,000/day. Calls reserve estimated input plus output before dispatch; overlapping requests share the reservation ledger and wait for minute capacity. Successful responses reconcile the reservation against actual token usage. This ledger is process-local and resets on restart; other applications using the same Groq account are outside it, so Groq remains authoritative.
+## License
 
-Requests have a 6,000 estimated-token envelope, including tools and output allowance. Input estimation uses UTF-8 bytes/3 plus overhead, not an exact model tokenizer. Fast output is capped at 600 tokens, normal output at 1,200 and editorial output at 1,800. Oversized inputs fail before a paid call instead of silently cutting the user's draft. Truncated model output is never applied. Requests may wait when the minute budget is occupied.
-
-Retrieval sends small selected fields and query-relevant excerpts, including matches deep inside research pages. Full source text stays in the database. Conversation history retains complete recent messages within a separate budget; tool-result payloads are compacted and the assistant is limited to three model rounds per turn. Editorial work runs sequentially, never in a burst of parallel calls; it skips paid calls without related evidence and caches validated per-post analysis by content, evidence, context and model. Changing one post therefore does not automatically repay for unchanged analyses. There is no provider Batch API job or whole-database prompt.
-
-### Daily Research Briefs layout
-
-`NOTION_LAYOUT=daily` is the default. The adapter retrieves the database's data-source schema, discovers its title property, and queries for an exact ISO title such as `2026-09-14`. It then reads that row's actual page blocks, including pagination, nested blocks, table cells and inline source links. Headings delimit research sections, each keyed by page ID plus heading block ID. Correcting text keeps the same ID. Dates identifying a brief are stored as `briefDate`; they are not fabricated article publication dates.
-
-Use **Intelligence → Brief to sync** to choose a historical entry. Leave it blank for today's date in `APP_TIMEZONE`, or set `NOTION_BRIEF_DATE=YYYY-MM-DD` as a local default override. A missing day produces an explicit message and keeps existing intelligence; the app does not quietly treat yesterday's research as today's. `NOTION_LAYOUT=items` retains the original one-item-per-row import for other databases. Rich-property mappings remain configurable. Sources without links or explicit metadata keep those fields unknown; their full text remains available.
-
-Live verification succeeded for both configured chat models and the September 14 daily page (13 sections). At verification time the September 15 row did not exist. Speech upload remains covered by mock and multipart contract tests; no live transcription was performed in this update.
-
-Next.js App Router, React, strict TypeScript, Tailwind, Drizzle and persistent PGlite PostgreSQL. Database/provider access stays server-side. The Neon and Auth.js foundation is retained for a later production stage.
-
-| Location                                       | Responsibility                                                                    |
-| ---------------------------------------------- | --------------------------------------------------------------------------------- |
-| `app/manage-actions.ts`                        | Authenticated, validated UI mutations and voice upload                            |
-| `components/manage/`                           | Calendar, editor, libraries, review, assistant, settings and search               |
-| `services/content.ts`                          | Content CRUD, conversion, scheduling and attachments                              |
-| `services/ai.ts`, `services/assistant.ts`      | Profile/context retrieval, usage, suggestions, bounded tool loop and approvals    |
-| `services/intelligence.ts`, `services/jobs.ts` | Sync, scoring, evidence-based review, decisions and scheduler-neutral entry point |
-| `providers/`                                   | Independent contracts, server-only selection, Groq/Notion adapters and mocks      |
-| `prompts/`                                     | Identity, writing profile and task-specific prompt modules                        |
-| `db/`, `drizzle/`                              | Schema, seeds and ordered migrations                                              |
-
-35 tables retain the original 29-table foundation and add AI suggestions, opportunities, intelligence/post relations, transcripts, assistant tool calls and sync runs. Stage 2 expands post concept fields, writing preferences, intelligence provenance/classification and usage cost fields. Publication dates may be unknown. Review input hashes replace date-only uniqueness so multiple revisions of a day's review remain available. SQL migrations `0001` and `0002` upgrade existing data without replacing it.
-
-Groq uses environment-selected models, structured tool calls and JSON responses, with token accounting and request timeouts. Assistant writes are queued, then executed transactionally after approval; no publish tool exists. Retrieved content is treated as untrusted data. Notion ingestion maps rich properties, paginates data sources/blocks, retries rate limits and transient failures, flattens nested text, and upserts by source/external ID. It preserves dismissals and avoids duplicate opportunities. Crawl limits fail explicitly instead of silently importing incomplete pages. See `providers/README.md` for adapter details.
-
-## Validation
-
-```powershell
-npm.cmd run typecheck
-npm.cmd run lint
-npm.cmd test
-npm.cmd run build
-# Stop normal dev first: Next development uses a shared build lock.
-npm.cmd run test:e2e
-```
-
-Unit/integration tests cover PostgreSQL CRUD, variants, timezone scheduling, attachments, approval/stale-original handling, idempotent sync/reviews, scoring, assistant tools/conversations, local auth boundaries, and mocked Groq/Notion HTTP contracts. The Edge Playwright workflow uses an isolated temporary local database on port 3100 and empty external API keys. It exercises the major screens, editing/scheduling, AI approvals, media, Notion mock sync, review decisions, assistant tools, voice, settings, search and mobile navigation. Microsoft Edge must be installed.
-
-Browser screenshots are generated under `.local/stage2-{calendar,editor,review,assistant,mobile}.png`: week calendar, variant comparison/editor, evidence-based morning review, assistant/voice workflow and mobile dashboard. These are local verification artifacts, not committed fixtures.
-
-Database utilities: `npm.cmd run db:seed` also applies migrations, `npm.cmd run db:generate` generates SQL, and `npm.cmd run db:migrate:production` targets the configured Neon scaffold. Do not run production migration commands without configuring that database deliberately.
-
-## Remaining boundaries
-
-Real Groq/Notion account behavior requires your credentials and model/database configuration; automated adapter tests use mocked HTTP. No real X/LinkedIn publishing, social metrics ingestion, Gemini analysis, R2 storage, Telegram, public deployment or unattended daily scheduler is included. Morning Review runs from the UI; a future authenticated scheduler can call `dailyWorkflow`. AI output remains a draft for human review. Pricing is user-supplied and estimates cover token usage, not provider billing reconciliation.
-
-## Strategic content brain
-
-Idea conversion and generation now run knowledge ingestion, relevant context retrieval, a shared strategic brief, platform-specific drafting, a critic, and at most one substantive revision. X/hashtag validation remains mandatory. A factual defect triggers one final audit; unresolved unsupported claims fail safely without replacing existing text. Regeneration remains a proposal requiring approval.
-
-Settings separates **About me**, **About my company**, **Social strategy**, **Content preferences**, and the existing **Writing profile**. Profiles start empty; sample data is never used to populate them. Source notes are preserved. Extracted knowledge retains its source hash, exact supporting excerpt, category, entities/themes, and `user_claim` versus `inference`; neither label means independent verification.
-
-`ContentContextService` bounds and ranks retrieved records rather than dumping the database. Context may include related knowledge, recent posts, dated Notion excerpts with links, mock trends, decisions, and genuine performance. Simulated publications are excluded from performance evidence; comparative wording patterns require at least five eligible genuine posts in each same-platform cohort (each with at least 100 impressions). These are descriptive associations, not engagement predictions. Retrieval is lexical; incomplete profiles and missing evidence are shown explicitly.
-
-**Why this draft?** shows the stored brief, objective, platform decision and critique. **View context used** lists record IDs and excerpts from the brief's retrieval packet, including source links. Platform and critic calls use smaller excerpts as needed. The optional assessment view exposes concise editorial summaries and rubric scores, never private reasoning tokens. It describes the latest generation; manual edits may differ.
-
-Extraction is cached by source hash, and X/LinkedIn reuse one brief when source, context, action and model are unchanged. Input excerpts and repair prompts are bounded below the existing 6,000-token request envelope; the Groq ledger still enforces configured per-model limits. Structured output has at most one schema retry; platform validation has at most three attempts; substantive revision has at most one pass. Quality requires more calls than simple paraphrasing, and workflows may pause for the minute budget. Per-step usage appears in Settings.
-
-Migration `0004` only adds profile, knowledge, brief and assessment tables. It does not rewrite existing content. Older drafts gain an explanation when regenerated. No Prompt 3 trend integration or external publishing is added.
-
-For an isolated live acceptance run using configured Groq credentials: `npx tsx --env-file=.env.local scripts/demo-content-brain.ts`. This uses an in-memory database with clearly synthetic test notes/profiles and writes `.local/content-brain-demo.json`; it does not change the owner's profiles or posts.
+ISC. The package is marked `private`.

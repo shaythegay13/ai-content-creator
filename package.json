@@ -1,7 +1,7 @@
 {
   "name": "ai-content-creator",
   "version": "1.0.0",
-  "description": "Private content workspace foundation",
+  "description": "Local workspace for drafting and scheduling X and LinkedIn posts",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
@@ -18,7 +18,7 @@
     "test:e2e": "playwright test"
   },
   "keywords": [],
-  "author": "",
+  "author": "Shay Bouchles",
   "license": "ISC",
   "type": "module",
   "dependencies": {
@@ -28,7 +28,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.46.0",
-    "next": "^16.3.5",
+    "next": "~16.3.8",
     "next-auth": "^5.0.0-beta.32",
     "radix-ui": "^1.6.7",
     "react": "^19.3.0",
@@ -47,7 +47,7 @@
     "@types/twitter-text": "^3.1.10",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.3.5",
+    "eslint-config-next": "~16.3.8",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
